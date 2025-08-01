@@ -110,31 +110,31 @@ CTRL_REG1:
         PowerDown:
           value: 0b0000
           description: Power-down mode
-        1Hz:
+        OneHz:
           value: 0b0001
           description: 1Hz sampling rate
-        10Hz:
+        TenHz:
           value: 0b0010
           description: 10Hz sampling rate
-        25Hz:
+        TwentyFiveHz:
           value: 0b0011
           description: 25Hz sampling rate
-        50Hz:
+        FiftyHz:
           value: 0b0100
           description: 50Hz sampling rate
-        100Hz:
+        HundredHz:
           value: 0b0101
           description: 100Hz sampling rate
-        200Hz:
+        TwoHundredHz:
           value: 0b0110
           description: 200Hz sampling rate
-        400Hz:
+        FourHundredHz:
           value: 0b0111
           description: 400Hz sampling rate
-        1620Hz:
+        SixteenTwentyHz:
           value: 0b1000
           description: 1620Hz sampling rate
-        5376Hz:
+        FiveThousandHz:
           value: 0b1001
           description: 5376Hz sampling rate
 
@@ -266,10 +266,10 @@ CTRL_REG4:
       description: Full-scale selection
       conversion:
         name: FS
-        ±2g: { value: 0b00, description: "±2g" }
-        ±4g: { value: 0b01, description: "±4g" }
-        ±8g: { value: 0b10, description: "±8g" }
-        ±16g: { value: 0b11, description: "±16g" }
+        PlusMinus2g: { value: 0b00, description: "±2g" }
+        PlusMinus4g: { value: 0b01, description: "±4g" }
+        PlusMinus8g: { value: 0b10, description: "±8g" }
+        PlusMinus16g: { value: 0b11, description: "±16g" }
     ST:
       base: uint
       start: 2
@@ -371,7 +371,7 @@ REFERENCE:
   size_bits: 8
   reset_value: 0x00
   fields:
-    REF:
+    REFERENCE:
       base: uint
       start: 0
       end: 8
@@ -460,6 +460,7 @@ FIFO_CTRL_REG:
       access: RW
       description: FIFO mode selection
       conversion:
+        name: FM
         Bypass: { value: 0b00, description: "Bypass mode" }
         FIFO: { value: 0b01, description: "FIFO mode" }
         Stream: { value: 0b10, description: "Stream mode" }
@@ -513,7 +514,7 @@ INT1_CFG:
       start: 7
       access: RW
       description: And/Or interrupt combination
-    _6D:
+    SIXD:
       base: bool
       start: 6
       access: RW
@@ -625,7 +626,7 @@ INT2_CFG:
       start: 7
       access: RW
       description: And/Or interrupt combination
-    _6D:
+    SIXD:
       base: bool
       start: 6
       access: RW

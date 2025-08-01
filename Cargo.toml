@@ -2,6 +2,7 @@
 name = "lis2de12"
 version = "0.1.0"
 edition = "2024"
+authors = ["Gerzain Mata <leftger@gmail.com>"]
 include = [
 	"/**/*.rs",
 	"/Cargo.toml",
@@ -9,16 +10,21 @@ include = [
 	"/LICENSE",
 	"src/lis2de12.yaml",
 ]
+readme = "README.md"
+keywords = ["accelerometer", "sensor", "i2c", "driver", "embedded-hal-driver"]
+categories = ["embedded", "hardware-support", "no-std"]
 
 [dependencies]
 device-driver = { version = "1.0.3", default-features = false, features = [
 	"yaml",
 ] }
+accelerometer = "0.12.0"
 defmt = { version = "1.0.1", optional = true }
+num-traits = { version = "0.2.19", optional = true, default-features = false }
+num-derive = { version = "0.4.2", optional = true }
 
 embedded-hal = "1.0.0"
 embedded-hal-async = "1.0.0"
-embedded-batteries-async = "0.2.0"
 
 [dev-dependencies]
 embedded-hal-mock = { version = "0.11.1", features = ["embedded-hal-async"] }
@@ -37,8 +43,9 @@ style = "forbid"
 pedantic = "deny"
 
 [features]
+default = []
+out_f32 = ["num-traits", "num-derive"]
 defmt-03 = [
 	"dep:defmt",
 	"device-driver/defmt-03",
-	"embedded-batteries-async/defmt",
 ]
