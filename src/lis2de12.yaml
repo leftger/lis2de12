@@ -1,0 +1,203 @@
+config:
+  default_byte_order: BE
+  buffer_address_type: u8
+  command_address_type: u8
+  register_address_type: u8
+  defmt_feature: defmt-03
+
+STATUS_REG_AUX:
+  type: register
+  description: Status Register Auxiliary Register
+  address: 0x07
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    TOR:
+      base: bool
+      start: 6
+      access: RO
+      description: |
+        Temperature data overrun. Default value: 0
+        0: no overrun has occurred
+        1: new temperature data has overwritten the previous data
+    TDA:
+      base: bool
+      start: 2
+      access: RO
+      description: |
+        Temperature new data available. Default value: 0
+        0: new temperature data is not yet available.
+        1: new temperature data is available.
+OUT_TEMP_L:
+  type: register
+  description: Temperature sensor data Low Byte
+  address: 0x0C
+  size_bits: 8
+  access: RO
+OUT_TEMP_H:
+  type: register
+  description: Temperature sensor data High Byte
+  address: 0x0D
+  size_bits: 8
+  access: RO
+WHO_AM_I:
+  type: register
+  description: Device identification register
+  address: 0x0F
+  size_bits: 8
+  access: RO
+CTRL_REG0:
+  type: register
+  description: Control register 0
+  address: 0x1E
+  size_bits: 8
+  reset_value: 0x10
+  fields:
+    SDO_PU_DISC:
+      base: bool
+      start: 7
+      access: RW
+      description: |
+        Disconnect SDO/SA0 pull-up.
+        0: pull-up connected to SDO/SA0 pin
+        1: pull-up disconnected to SDO/SA0 pin
+TEMP_CFG_REG:
+  type: register
+  description: Temperature sensor configuration register
+  address: 0x1F
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    TEMP_EN:
+      base: uint
+      start: 6
+      end: 8
+      access: RW
+      description: |
+        Temperature sensor enable
+        00: Disabled
+        11: Enabled
+      try_conversion:
+        name: TEMP_EN
+        TempEn:
+          value: 0b00
+          description: Temperature sensor enable
+        TempDis:
+          value: 0b11
+          description: Temperature sensoe disable
+CTRL_REG1:
+  type: register
+  description: Control register 1
+  address: 0x20
+  size_bits: 8
+  reset_value: 0x07
+  fields:
+    ODR:
+      base: uint
+      start: 4
+      end: 8
+      access: RW
+      description: |
+        Output data rate
+      try_conversion:
+        name: ODR
+        PowerDown:
+          value: 0b0000
+          description: Power-down mode
+        1Hz:
+          value: 0b0001
+          description: 1Hz sampling rate
+        10Hz:
+          value: 0b0010
+          description: 10Hz sampling rate
+        25Hz:
+          value: 0b0011
+          description: 25Hz sampling rate
+        50Hz:
+          value: 0b0100
+          description: 50Hz sampling rate
+        100Hz:
+          value: 0b0101
+          description: 100Hz sampling rate
+        200Hz:
+          value: 0b0110
+          description: 200Hz sampling rate
+        400Hz:
+          value: 0b0111
+          description: 400Hz sampling rate
+        1620Hz:
+          value: 0b1000
+          description: 1620Hz sampling rate
+        5376Hz:
+          value: 0b1001
+          description: 5376Hz sampling rate
+CTRL_REG2:
+  type: register
+  description: Control register 2
+  address: 0x21
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    HPM:
+      base: uint
+      start: 6
+      end: 8
+      description: |
+        High-pass filter mode selection
+      conversion:
+        name: HPM
+        NormalMode:
+          value: 0b00
+          description: Normal mode
+        ReferenceSignal:
+          value: 0b01
+          description: Reference signal for filtering
+        NormalMode2:
+          value: 0b10
+          description: Normal mode
+        Autoreset:
+          value: 0b11
+          description: Autoreset on interrupt event
+    HPCF:
+      base: uint
+      start: 4
+      end: 6
+      description: |
+        High-pass filter cutoff frequency selection
+      conversion:
+        name: HPCF
+        TwoPercent:
+          value: 0b00
+          description: Two percent of sampling rate
+        OnePercent:
+          value: 0b01
+          description: One percent of sampling rate
+        HalfPercent:
+          value: 0b10
+          description: Half percent of sampling rate
+        FifthPercent:
+          value: 0b11
+          description: Fifth of a percent of sampling rate
+    FDS:
+      base: bool
+      start: 3
+      description: |
+        Filtered data selection
+        0: Internal filter bypassed
+        1: Data from internal filter sent to ouptut register and FIFO
+    HPCLICK:
+      base: bool
+      start: 2
+      description: |
+        High pass filter enabled for CLICK Function
+    HP_IA2:
+      base: bool
+      start: 1
+      description: |
+        High pass filter enabled for AOI function on Interrupt 2
+    HP_IA1:
+      base: bool
+      start: 0
+      description: |
+        High pass filter enabled for AOI function on Interrupt 1
+    
