@@ -28,24 +28,28 @@ STATUS_REG_AUX:
         Temperature new data available. Default value: 0
         0: new temperature data is not yet available.
         1: new temperature data is available.
+
 OUT_TEMP_L:
   type: register
   description: Temperature sensor data Low Byte
   address: 0x0C
   size_bits: 8
   access: RO
+
 OUT_TEMP_H:
   type: register
   description: Temperature sensor data High Byte
   address: 0x0D
   size_bits: 8
   access: RO
+
 WHO_AM_I:
   type: register
   description: Device identification register
   address: 0x0F
   size_bits: 8
   access: RO
+
 CTRL_REG0:
   type: register
   description: Control register 0
@@ -61,6 +65,7 @@ CTRL_REG0:
         Disconnect SDO/SA0 pull-up.
         0: pull-up connected to SDO/SA0 pin
         1: pull-up disconnected to SDO/SA0 pin
+
 TEMP_CFG_REG:
   type: register
   description: Temperature sensor configuration register
@@ -85,6 +90,7 @@ TEMP_CFG_REG:
         TempDis:
           value: 0b11
           description: Temperature sensoe disable
+
 CTRL_REG1:
   type: register
   description: Control register 1
@@ -131,6 +137,7 @@ CTRL_REG1:
         5376Hz:
           value: 0b1001
           description: 5376Hz sampling rate
+
 CTRL_REG2:
   type: register
   description: Control register 2
@@ -200,4 +207,683 @@ CTRL_REG2:
       start: 0
       description: |
         High pass filter enabled for AOI function on Interrupt 1
-    
+
+CTRL_REG3:
+  type: register
+  description: Control register 3
+  address: 0x22
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    I1_CLICK:
+      base: bool
+      start: 7
+      access: RW
+      description: Click interrupt on INT1 pin
+    I1_IA1:
+      base: bool
+      start: 6
+      access: RW
+      description: IA1 interrupt on INT1 pin
+    I1_IA2:
+      base: bool
+      start: 5
+      access: RW
+      description: IA2 interrupt on INT1 pin
+    I1_ZYXDA:
+      base: bool
+      start: 4
+      access: RW
+      description: ZYX data ready interrupt on INT1 pin
+    I1_WTM:
+      base: bool
+      start: 2
+      access: RW
+      description: FIFO watermark interrupt on INT1 pin
+    I1_OVERRUN:
+      base: bool
+      start: 1
+      access: RW
+      description: FIFO overrun interrupt on INT1 pin
+
+CTRL_REG4:
+  type: register
+  description: Control register 4
+  address: 0x23
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    BDU:
+      base: bool
+      start: 7
+      access: RW
+      description: Block data update
+    FS:
+      base: uint
+      start: 4
+      end: 6
+      access: RW
+      description: Full-scale selection
+      conversion:
+        name: FS
+        ±2g: { value: 0b00, description: "±2g" }
+        ±4g: { value: 0b01, description: "±4g" }
+        ±8g: { value: 0b10, description: "±8g" }
+        ±16g: { value: 0b11, description: "±16g" }
+    ST:
+      base: uint
+      start: 2
+      end: 4
+      access: RW
+      description: Self-test enable
+      conversion:
+        name: ST
+        Normal: { value: 0b00, description: "Normal mode" }
+        SelfTest0: { value: 0b01, description: "Self-test 0" }
+        SelfTest1: { value: 0b10, description: "Self-test 1" }
+        SelfTestMix: { value: 0b11, description: "Self-test mix" }
+    SIM:
+      base: bool
+      start: 0
+      access: RW
+      description: SPI serial interface mode selection
+
+CTRL_REG5:
+  type: register
+  description: Control register 5
+  address: 0x24
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    BOOT:
+      base: bool
+      start: 7
+      access: RW
+      description: Reboot memory content
+    FIFO_EN:
+      base: bool
+      start: 6
+      access: RW
+      description: FIFO enable
+    LIR_INT1:
+      base: bool
+      start: 5
+      access: RW
+      description: Latch interrupt on INT1
+    D4D_INT1:
+      base: bool
+      start: 4
+      access: RW
+      description: 4D detect on INT1
+    LIR_INT2:
+      base: bool
+      start: 3
+      access: RW
+      description: Latch interrupt on INT2
+    D4D_INT2:
+      base: bool
+      start: 2
+      access: RW
+      description: 4D detect on INT2
+
+CTRL_REG6:
+  type: register
+  description: Control register 6
+  address: 0x25
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    I2_CLICK:
+      base: bool
+      start: 7
+      access: RW
+      description: Click interrupt on INT2
+    I2_IA1:
+      base: bool
+      start: 6
+      access: RW
+      description: IA1 interrupt on INT2
+    I2_IA2:
+      base: bool
+      start: 5
+      access: RW
+      description: IA2 interrupt on INT2
+    I2_BOOT:
+      base: bool
+      start: 4
+      access: RW
+      description: Boot on INT2
+    I2_ACT:
+      base: bool
+      start: 3
+      access: RW
+      description: Activity interrupt on INT2
+    INT_POLARITY:
+      base: bool
+      start: 1
+      access: RW
+      description: Interrupt polarity
+
+REFERENCE:
+  type: register
+  description: Reference register for interrupts
+  address: 0x26
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    REF:
+      base: uint
+      start: 0
+      end: 8
+      access: RW
+      description: Reference value
+
+STATUS_REG:
+  type: register
+  description: Status register
+  address: 0x27
+  size_bits: 8
+  access: RO
+  fields:
+    ZYXOR:
+      base: bool
+      start: 7
+      description: X/Y/Z axis data overrun
+    ZOR:
+      base: bool
+      start: 6
+      description: Z-axis data overrun
+    YOR:
+      base: bool
+      start: 5
+      description: Y-axis data overrun
+    XOR:
+      base: bool
+      start: 4
+      description: X-axis data overrun
+    ZYXDA:
+      base: bool
+      start: 3
+      description: X/Y/Z new data available
+    ZDA:
+      base: bool
+      start: 2
+      description: Z-axis new data available
+    YDA:
+      base: bool
+      start: 1
+      description: Y-axis new data available
+    XDA:
+      base: bool
+      start: 0
+      description: X-axis new data available
+
+FIFO_READ_START:
+  type: register
+  description: FIFO read start
+  address: 0x28
+  size_bits: 8
+  reset_value: 0x00
+
+OUT_X_H:
+  type: register
+  description: X-axis acceleration data (MSB)
+  address: 0x29
+  size_bits: 8
+  access: RO
+
+OUT_Y_H:
+  type: register
+  description: Y-axis acceleration data (MSB)
+  address: 0x2B
+  size_bits: 8
+  access: RO
+
+OUT_Z_H:
+  type: register
+  description: Z-axis acceleration data (MSB)
+  address: 0x2D
+  size_bits: 8
+  access: RO
+
+FIFO_CTRL_REG:
+  type: register
+  description: FIFO control register
+  address: 0x2E
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    FM:
+      base: uint
+      start: 6
+      end: 8
+      access: RW
+      description: FIFO mode selection
+      conversion:
+        Bypass: { value: 0b00, description: "Bypass mode" }
+        FIFO: { value: 0b01, description: "FIFO mode" }
+        Stream: { value: 0b10, description: "Stream mode" }
+        StreamToFIFO: { value: 0b11, description: "Stream-to-FIFO" }
+    TR:
+      base: bool
+      start: 5
+      access: RW
+      description: Trigger selection (INT pin)
+    FTH:
+      base: uint
+      start: 0
+      end: 5
+      access: RW
+      description: FIFO threshold
+
+FIFO_SRC_REG:
+  type: register
+  description: FIFO source register
+  address: 0x2F
+  size_bits: 8
+  access: RO
+  fields:
+    WTM:
+      base: bool
+      start: 7
+      description: Watermark flag
+    OVRN_FIFO:
+      base: bool
+      start: 6
+      description: Overrun flag
+    EMPTY:
+      base: bool
+      start: 5
+      description: FIFO empty flag
+    FSS:
+      base: uint
+      start: 0
+      end: 5
+      description: Number of unread samples
+
+INT1_CFG:
+  type: register
+  description: Interrupt 1 configuration
+  address: 0x30
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    AOI:
+      base: bool
+      start: 7
+      access: RW
+      description: And/Or interrupt combination
+    _6D:
+      base: bool
+      start: 6
+      access: RW
+      description: 6-direction detection enable
+    ZHIE:
+      base: bool
+      start: 5
+      access: RW
+      description: Z high event enable
+    ZLIE:
+      base: bool
+      start: 4
+      access: RW
+      description: Z low event enable
+    YHIE:
+      base: bool
+      start: 3
+      access: RW
+      description: Y high event enable
+    YLIE:
+      base: bool
+      start: 2
+      access: RW
+      description: Y low event enable
+    XHIE:
+      base: bool
+      start: 1
+      access: RW
+      description: X high event enable
+    XLIE:
+      base: bool
+      start: 0
+      access: RW
+      description: X low event enable
+
+INT1_SRC:
+  type: register
+  description: Interrupt 1 source
+  address: 0x31
+  size_bits: 8
+  access: RO
+  fields:
+    IA:
+      base: bool
+      start: 6
+      description: Interrupt active
+    ZH:
+      base: bool
+      start: 5
+      description: Z high event
+    ZL:
+      base: bool
+      start: 4
+      description: Z low event
+    YH:
+      base: bool
+      start: 3
+      description: Y high event
+    YL:
+      base: bool
+      start: 2
+      description: Y low event
+    XH:
+      base: bool
+      start: 1
+      description: X high event
+    XL:
+      base: bool
+      start: 0
+      description: X low event
+
+INT1_THS:
+  type: register
+  description: Interrupt 1 threshold
+  address: 0x32
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    THS:
+      base: uint
+      start: 0
+      end: 7
+      access: RW
+      description: Threshold value (LSb depends on full-scale)
+
+INT1_DURATION:
+  type: register
+  description: Interrupt 1 duration
+  address: 0x33
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    D:
+      base: uint
+      start: 0
+      end: 7
+      access: RW
+      description: Duration (LSb = 1/ODR)
+
+INT2_CFG:
+  type: register
+  description: Interrupt 2 configuration
+  address: 0x34
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    AOI:
+      base: bool
+      start: 7
+      access: RW
+      description: And/Or interrupt combination
+    _6D:
+      base: bool
+      start: 6
+      access: RW
+      description: 6-direction detection enable
+    ZHIE:
+      base: bool
+      start: 5
+      access: RW
+      description: Z high event enable
+    ZLIE:
+      base: bool
+      start: 4
+      access: RW
+      description: Z low event enable
+    YHIE:
+      base: bool
+      start: 3
+      access: RW
+      description: Y high event enable
+    YLIE:
+      base: bool
+      start: 2
+      access: RW
+      description: Y low event enable
+    XHIE:
+      base: bool
+      start: 1
+      access: RW
+      description: X high event enable
+    XLIE:
+      base: bool
+      start: 0
+      access: RW
+      description: X low event enable
+
+INT2_SRC:
+  type: register
+  description: Interrupt 2 source
+  address: 0x35
+  size_bits: 8
+  access: RO
+  fields:
+    IA:
+      base: bool
+      start: 6
+      description: Interrupt active
+    ZH:
+      base: bool
+      start: 5
+      description: Z high event
+    ZL:
+      base: bool
+      start: 4
+      description: Z low event
+    YH:
+      base: bool
+      start: 3
+      description: Y high event
+    YL:
+      base: bool
+      start: 2
+      description: Y low event
+    XH:
+      base: bool
+      start: 1
+      description: X high event
+    XL:
+      base: bool
+      start: 0
+      description: X low event
+
+INT2_THS:
+  type: register
+  description: Interrupt 2 threshold
+  address: 0x36
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    THS:
+      base: uint
+      start: 0
+      end: 7
+      access: RW
+      description: Threshold value (LSb depends on full-scale)
+
+INT2_DURATION:
+  type: register
+  description: Interrupt 2 duration
+  address: 0x37
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    D:
+      base: uint
+      start: 0
+      end: 7
+      access: RW
+      description: Duration (LSb = 1/ODR)
+
+CLICK_CFG:
+  type: register
+  description: Click configuration
+  address: 0x38
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    ZD:
+      base: bool
+      start: 5
+      access: RW
+      description: Double-click Z
+    ZS:
+      base: bool
+      start: 4
+      access: RW
+      description: Single-click Z
+    YD:
+      base: bool
+      start: 3
+      access: RW
+      description: Double-click Y
+    YS:
+      base: bool
+      start: 2
+      access: RW
+      description: Single-click Y
+    XD:
+      base: bool
+      start: 1
+      access: RW
+      description: Double-click X
+    XS:
+      base: bool
+      start: 0
+      access: RW
+      description: Single-click X
+
+CLICK_SRC:
+  type: register
+  description: Click source
+  address: 0x39
+  size_bits: 8
+  access: RO
+  fields:
+    IA:
+      base: bool
+      start: 5
+      description: Click interrupt active
+    DClick:
+      base: bool
+      start: 4
+      description: Double-click detect
+    SClick:
+      base: bool
+      start: 3
+      description: Single-click detect
+    Sign:
+      base: bool
+      start: 2
+      description: Click sign
+    Z:
+      base: bool
+      start: 1
+      description: Z click event
+    Y:
+      base: bool
+      start: 0
+      description: Y click event
+    X:
+      base: bool
+      start: 7
+      description: X click event
+
+CLICK_THS:
+  type: register
+  description: Click threshold
+  address: 0x3A
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    LIR_Click:
+      base: bool
+      start: 7
+      access: RW
+      description: Latch click interrupt
+    Ths:
+      base: uint
+      start: 0
+      end: 7
+      access: RW
+      description: Click threshold
+
+TIME_LIMIT:
+  type: register
+  description: Click time limit
+  address: 0x3B
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    TLI:
+      base: uint
+      start: 0
+      end: 7
+      access: RW
+      description: Time limit
+
+TIME_LATENCY:
+  type: register
+  description: Click latency
+  address: 0x3C
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    TLA:
+      base: uint
+      start: 0
+      end: 8
+      access: RW
+      description: Time latency
+
+TIME_WINDOW:
+  type: register
+  description: Click time window
+  address: 0x3D
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    TW:
+      base: uint
+      start: 0
+      end: 8
+      access: RW
+      description: Time window
+
+ACT_THS:
+  type: register
+  description: Sleep-to-wake threshold
+  address: 0x3E
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    Acth:
+      base: uint
+      start: 0
+      end: 7
+      access: RW
+      description: Activation threshold
+
+ACT_DUR:
+  type: register
+  description: Sleep-to-wake duration
+  address: 0x3F
+  size_bits: 8
+  reset_value: 0x00
+  fields:
+    ActD:
+      base: uint
+      start: 0
+      end: 7
+      access: RW
+      description: Duration
