@@ -1,5 +1,3 @@
-
-
 //! Platform-agnostic LIS2DE12 accelerometer driver generated from `lis2de12.yaml`.
 //! Implements the [`Accelerometer`] and [`RawAccelerometer`] traits from the `accelerometer` crate.
 
@@ -7,12 +5,12 @@
 #![deny(missing_docs)]
 #![deny(warnings)]
 
+use accelerometer::vector::{F32x3, I16x3};
+use accelerometer::{Error, ErrorKind, RawAccelerometer};
 use device_driver::create_device;
+use device_driver::{BufferInterface, BufferInterfaceError, RegisterInterface};
 use embedded_hal as hal;
 use hal::i2c::I2c;
-use accelerometer::{Accelerometer, Error, ErrorKind, RawAccelerometer};
-use accelerometer::vector::{I16x3, F32x3};
-use device_driver::{RegisterInterface, BufferInterfaceError, BufferInterface};
 
 // RegisterInterface & BufferInterface implementations for blocking I²C
 
@@ -70,15 +68,22 @@ impl<I2C> BufferInterface for DeviceInterface<I2C>
 where
     I2C: hal::i2c::I2c,
 {
-    type Error = I2C::Error;
     type AddressType = u8;
 
-    fn read(&mut self, address: Self::AddressType, buf: &mut [u8]) -> Result<usize, <Self as RegisterInterface>::Error> {
+    fn read(
+        &mut self,
+        address: Self::AddressType,
+        buf: &mut [u8],
+    ) -> Result<usize, <Self as RegisterInterface>::Error> {
         self.i2c.write_read(address, &[address], buf)?;
         Ok(buf.len())
     }
 
-    fn write(&mut self, address: Self::AddressType, buf: &[u8]) -> Result<usize, <Self as RegisterInterface>::Error> {
+    fn write(
+        &mut self,
+        address: Self::AddressType,
+        buf: &[u8],
+    ) -> Result<usize, <Self as RegisterInterface>::Error> {
         let mut data = [0u8; 1 + 32];
         data[0] = address;
         data[1..=buf.len()].copy_from_slice(buf);
@@ -86,8 +91,38 @@ where
         Ok(buf.len())
     }
 
-    fn flush(&mut self, _address: Self::AddressType) -> Result<(), <Self as RegisterInterface>::Error> {
+    fn flush(
+        &mut self,
+        _address: Self::AddressType,
+    ) -> Result<(), <Self as RegisterInterface>::Error> {
         Ok(())
+    }
+}
+// ...existing code...
+// Implement RawAccelerometer for Lis2de12<I2C> so accel_raw is available
+impl<I2C> RawAccelerometer<I16x3> for Lis2de12<I2C>
+where
+    I2C: I2c,
+    I2C::Error: core::fmt::Debug,
+{
+    type Error = Error<Error<Error<Error<Error<Error<I2C::Error>>>>>>;
+
+    fn accel_raw(&mut self) -> Result<I16x3, Self::Error> {
+        let mut buf = [0u8; 6];
+        self.device
+            .interface
+            .read_register(0x28, 8, &mut buf)
+            .map_err(|e| {
+                Error::from(Error::from(Error::from(Error::from(Error::from(
+                    Error::from(e),
+                )))))
+            })?;
+
+        let x = i16::from_le_bytes([buf[0], buf[1]]);
+        let y = i16::from_le_bytes([buf[2], buf[3]]);
+        let z = i16::from_le_bytes([buf[4], buf[5]]);
+
+        Ok(I16x3::new(x, y, z))
     }
 }
 
@@ -122,7 +157,10 @@ where
     ///
     /// Returns an error if the WHO_AM_I register does not match the expected device ID.
     pub fn new(i2c: I2C, addr: SlaveAddr) -> Result<Self, Error<I2C::Error>> {
-        let interface = DeviceInterface { i2c, address: addr.addr() };
+        let interface = DeviceInterface {
+            i2c,
+            address: addr.addr(),
+        };
         let mut device = Lis2de12Device::new(interface);
         // Verify device ID (WHO_AM_I = 0x33)
         let mut who_buf = [0u8; 1];
@@ -142,81 +180,96 @@ where
         let Lis2de12Device { interface, .. } = self.device;
         interface.i2c
     }
-}
 
-impl<I2C> RawAccelerometer<I16x3> for Lis2de12<I2C>
-where
-    I2C: I2c,
-{
-    type Error = Error<I2C::Error>;
-
-    fn accel_raw(&mut self) -> Result<I16x3, Error<I2C::Error>> {
-        let mut buf = [0u8; 6];
+    /// Read a generic register
+    pub fn read_reg(&mut self, reg: u8, buf: &mut [u8]) -> Result<(), Error<I2C::Error>> {
         self.device
             .interface
-            .read_register(0x28, 8, &mut buf)
-            .map_err(Error::from)?;
-
-        let x = i16::from_le_bytes([buf[0], buf[1]]);
-        let y = i16::from_le_bytes([buf[2], buf[3]]);
-        let z = i16::from_le_bytes([buf[4], buf[5]]);
-
-        Ok(I16x3::new(x, y, z))
+            .read_register(reg, 8, buf)
+            .map_err(Error::from)
     }
+
+    /// Write a generic register
+    pub fn write_reg(&mut self, reg: u8, data: &[u8]) -> Result<(), Error<I2C::Error>> {
+        self.device
+            .interface
+            .write_register(reg, 8, data)
+            .map_err(Error::from)
+    }
+
+    /// Get device ID (WHO_AM_I)
+    pub fn device_id(&mut self) -> Result<u8, Error<I2C::Error>> {
+        let mut buf = [0u8; 1];
+        self.read_reg(0x0F, &mut buf)?;
+        Ok(buf[0])
+    }
+
+    /// Get raw temperature value
+    pub fn temperature_raw(&mut self) -> Result<i16, Error<I2C::Error>> {
+        let mut buf = [0u8; 2];
+        self.read_reg(0x0C, &mut buf)?;
+        Ok(((buf[1] as i16) << 8) | (buf[0] as i16))
+    }
+
+    /// Set output data rate
+    pub fn set_data_rate(&mut self, odr: u8) -> Result<(), Error<I2C::Error>> {
+        let mut buf = [0u8; 1];
+        self.read_reg(0x20, &mut buf)?;
+        buf[0] = (buf[0] & !0xF0) | ((odr & 0x0F) << 4);
+        self.write_reg(0x20, &buf)
+    }
+
+    /// Get output data rate
+    pub fn get_data_rate(&mut self) -> Result<u8, Error<I2C::Error>> {
+        let mut buf = [0u8; 1];
+        self.read_reg(0x20, &mut buf)?;
+        Ok((buf[0] >> 4) & 0x0F)
+    }
+
+    // Add more methods for other register operations as needed...
 }
 
-impl<I2C: I2c> RawAccelerometer<I16x3> for Lis2de12<I2C> {
-    type Error = I2C::Error;
+// ...existing code...
 
-    /// Get acceleration reading from the accelerometer
-    fn accel_raw(&mut self) -> Result<I16x3, Error<Self::Error>> {
-        let mut buf = [0u8; 6];
-        self.read_regs(Register::OUT_X_L, &mut buf)?;
+// ...existing code...
 
-        Ok(I16x3::new(
-            (u16(buf[0]) + (u16(buf[1]) << 8)) as i16,
-            (u16(buf[2]) + (u16(buf[3]) << 8)) as i16,
-            (u16(buf[4]) + (u16(buf[5]) << 8)) as i16,
-        ))
-    }
-}
-
+use accelerometer::Accelerometer;
 #[cfg(feature = "out_f32")]
+use accelerometer::vector::F32x3;
+
 impl<I2C: I2c> Accelerometer for Lis2de12<I2C> {
-    type Error = I2C::Error;
+    type Error = Error<I2C::Error>;
 
     /// Get normalized ±g reading from the accelerometer
     fn accel_norm(&mut self) -> Result<F32x3, Error<Self::Error>> {
-        let acc_raw: I16x3 = self.accel_raw()?;
-
+        let acc_raw = self.accel_raw().map_err(Error::from)?;
+        // Example conversion: scale raw value to g assuming 16-bit full scale ±2g
+        // You may want to adjust this based on your sensor configuration
+        const SCALE: f32 = 2.0 / 32768.0;
         Ok(F32x3::new(
-            self.fs.convert_out_i16tof32(acc_raw.x),
-            self.fs.convert_out_i16tof32(acc_raw.y),
-            self.fs.convert_out_i16tof32(acc_raw.z),
+            acc_raw.x as f32 * SCALE,
+            acc_raw.y as f32 * SCALE,
+            acc_raw.z as f32 * SCALE,
         ))
     }
 
     /// Get sample rate of accelerometer in Hz
     fn sample_rate(&mut self) -> Result<f32, Error<Self::Error>> {
-        let creg1 = self.read_reg(Register::CTRL_REG1)?;
-        let rate = match FromPrimitive::from_u8(creg1 >> 4) {
-            Some(Odr::PowerDown) => 0.0,
-            Some(Odr::Hz1) => 1.0,
-            Some(Odr::Hz10) => 10.0,
-            Some(Odr::Hz25) => 25.0,
-            Some(Odr::Hz50) => 50.0,
-            Some(Odr::Hz100) => 100.0,
-            Some(Odr::Hz200) => 200.0,
-            Some(Odr::Hz400) => 400.0,
-            Some(Odr::HighRate0) => 1620.0,
-            Some(Odr::HighRate1) => {
-                if creg1 & LPen == 0 {
-                    1344.0
-                } else {
-                    5376.0
-                }
-            }
-            None => 0.0,
+        let mut buf = [0u8; 1];
+        self.read_reg(0x20, &mut buf)?;
+        let odr = (buf[0] >> 4) & 0x0F;
+        let rate = match odr {
+            0x0 => 0.0, // Power-down
+            0x1 => 1.0,
+            0x2 => 10.0,
+            0x3 => 25.0,
+            0x4 => 50.0,
+            0x5 => 100.0,
+            0x6 => 200.0,
+            0x7 => 400.0,
+            0x8 => 1620.0, // High rate
+            0x9 => 5376.0, // High rate
+            _ => 0.0,
         };
         Ok(rate)
     }
