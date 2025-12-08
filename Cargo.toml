@@ -1,13 +1,17 @@
 [package]
 name = "lis2de12"
 version = "0.1.0"
+description = "Blocking and async driver for the LIS2DE12 accelerometer"
 edition = "2024"
 authors = ["Gerzain Mata <leftger@gmail.com>"]
+repository = "https://github.com/leftger/lis2de12"
+license = "MIT OR Apache-2.0"
 include = [
-	"/**/*.rs",
-	"/Cargo.toml",
-	"/README.md",
-	"/LICENSE",
+	"src/**/*.rs",
+	"build.rs",
+	"Cargo.toml",
+	"README.md",
+	"LICENSE*",
 	"src/lis2de12.yaml",
 ]
 readme = "README.md"
@@ -20,15 +24,19 @@ device-driver = { version = "1.0.3", default-features = false, features = [
 ] }
 accelerometer = "0.12.0"
 defmt = { version = "1.0.1", optional = true }
-num-traits = { version = "0.2.19", optional = true, default-features = false }
-num-derive = { version = "0.4.2", optional = true }
+
 
 embedded-hal = "1.0.0"
-embedded-hal-async = "1.0.0"
+embedded-hal-async = { version = "1.0.0", optional = true }
 
-[dev-dependencies]
-embedded-hal-mock = { version = "0.11.1", features = ["embedded-hal-async"] }
-tokio = { version = "1.42.0", features = ["rt", "macros"] }
+
+[build-dependencies]
+device-driver-generation = "1.0.7"
+prettyplease = "0.2.37"
+proc-macro2 = "1.0.103"
+syn = { version = "2.0.111", features = ["full"] }
+
+
 
 [lints.rust]
 unsafe_code = "deny"
@@ -44,7 +52,9 @@ pedantic = "deny"
 
 [features]
 default = []
-out_f32 = ["num-traits", "num-derive"]
+
+async = ["dep:embedded-hal-async"]
+
 defmt-03 = [
 	"dep:defmt",
 	"device-driver/defmt-03",

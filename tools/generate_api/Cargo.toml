@@ -1,0 +1,21 @@
+[package]
+name = "lis2de12-generate-api"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+description = "Internal helper binary to materialize the LIS2DE12 Rust API from the YAML manifest."
+default-run = "generate-api"
+
+[[bin]]
+name = "generate-api"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.99"
+clap = { version = "4.5.16", features = ["derive"] }
+device-driver-generation = "1.0.7"
+prettyplease = "0.2.21"
+proc-macro2 = "1.0.86"
+quote = "1.0.37"
+syn = { version = "2.0.77", features = ["full"] }
