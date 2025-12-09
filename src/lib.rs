@@ -980,3 +980,137 @@ fn scale_to_g(raw: I16x3, g_per_lsb: f32) -> F32x3 {
         raw.z as f32 * g_per_lsb,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::f32::EPSILON;
+
+    #[test]
+    fn validate_config_requires_enabled_axis() {
+        let mut config = Lis2de12Config::default();
+        config.axes = AxesEnable {
+            x: false,
+            y: false,
+            z: false,
+        };
+
+        let err = validate_config_common::<()>(&config).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::Device);
+    }
+
+    #[test]
+    fn validate_config_enforces_watermark_limit() {
+        let mut config = Lis2de12Config::default();
+        config.fifo = FifoConfig::enabled(FifoMode::Fifo).with_watermark(FIFO_WATERMARK_MAX + 1);
+
+        let err = validate_config_common::<()>(&config).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::Param);
+    }
+
+    #[test]
+    fn validate_config_accepts_valid_fifo_settings() {
+        let mut config = Lis2de12Config::default();
+        config.fifo = FifoConfig::enabled(FifoMode::Stream).with_watermark(FIFO_WATERMARK_MAX);
+
+        assert!(validate_config_common::<()>(&config).is_ok());
+    }
+
+    #[test]
+    fn fifo_status_parses_flags_and_length() {
+        let mut raw = field_sets::FifoSrcReg::new();
+        raw.set_wtm(true);
+        raw.set_ovrn_fifo(false);
+        raw.set_empty(false);
+        raw.set_fss(5);
+
+        let status = FifoStatus::from_raw(raw);
+        assert!(status.is_watermark_triggered());
+        assert!(!status.is_overrun());
+        assert!(!status.is_empty());
+        assert_eq!(status.len(), 5);
+        assert_eq!(
+            status.remaining_capacity(),
+            (FIFO_CAPACITY as u8).saturating_sub(5)
+        );
+    }
+
+    #[test]
+    fn fifo_status_reports_full_when_overrun() {
+        let mut raw = field_sets::FifoSrcReg::new();
+        raw.set_wtm(true);
+        raw.set_ovrn_fifo(true);
+        raw.set_empty(false);
+        raw.set_fss(0);
+
+        let status = FifoStatus::from_raw(raw);
+        assert!(status.is_overrun());
+        assert_eq!(status.len(), FIFO_CAPACITY as u8);
+    }
+
+    #[test]
+    fn decode_raw_respects_operating_mode_shift() {
+        let frame: FifoFrame = [0x40, 0x00, 0x80, 0x00, 0xC0, 0x00];
+        let decoded = decode_raw(&frame, OperatingMode::Normal);
+
+        assert_eq!(decoded.x, 1);
+        assert_eq!(decoded.y, 2);
+        assert_eq!(decoded.z, 3);
+    }
+
+    #[test]
+    fn scale_to_mg_rounds_toward_nearest() {
+        let raw = I16x3::new(1, -1, 2);
+        let scaled = scale_to_mg(raw, 1.5);
+
+        assert_eq!(scaled.x, 2);
+        assert_eq!(scaled.y, -2);
+        assert_eq!(scaled.z, 3);
+    }
+
+    #[test]
+    fn scale_to_g_scales_components() {
+        let raw = I16x3::new(2, -4, 0);
+        let scaled = scale_to_g(raw, 0.5);
+
+        assert!((scaled.x - 1.0).abs() <= EPSILON);
+        assert!((scaled.y + 2.0).abs() <= EPSILON);
+        assert!(scaled.z.abs() <= EPSILON);
+    }
+
+    #[test]
+    fn fifo_config_effective_threshold_zero_when_disabled() {
+        let config = FifoConfig {
+            enable: false,
+            mode: FifoMode::Bypass,
+            watermark: Some(12),
+        };
+
+        assert_eq!(config.effective_threshold(), 0);
+    }
+
+    #[test]
+    fn fifo_config_effective_threshold_clamps_to_max() {
+        let config = FifoConfig {
+            enable: true,
+            mode: FifoMode::Stream,
+            watermark: Some(40),
+        };
+
+        assert_eq!(config.effective_threshold(), FIFO_WATERMARK_MAX);
+    }
+
+    #[test]
+    fn fifo_status_reports_empty_flag() {
+        let mut raw = field_sets::FifoSrcReg::new();
+        raw.set_wtm(false);
+        raw.set_ovrn_fifo(false);
+        raw.set_empty(true);
+        raw.set_fss(7);
+
+        let status = FifoStatus::from_raw(raw);
+        assert!(status.is_empty());
+        assert_eq!(status.len(), 0);
+        assert_eq!(status.remaining_capacity(), FIFO_CAPACITY as u8);
+    }
+}
