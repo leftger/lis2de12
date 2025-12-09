@@ -5,9 +5,11 @@
 #![deny(warnings)]
 #![allow(clippy::missing_errors_doc)]
 
+use core::cmp;
+use core::fmt::Debug;
+
 use accelerometer::vector::{F32x3, I16x3};
 use accelerometer::{Error, ErrorKind, RawAccelerometer};
-use core::{cmp, fmt::Debug};
 #[cfg(feature = "async")]
 use device_driver::{AsyncBufferInterface, AsyncRegisterInterface};
 use device_driver::{BufferInterface, BufferInterfaceError, RegisterInterface};
@@ -20,14 +22,12 @@ use hal_async::i2c::I2c as AsyncI2c;
 
 #[allow(unsafe_code)]
 #[allow(missing_docs)]
-#[allow(
-    clippy::doc_markdown,
-    clippy::missing_errors_doc,
-    clippy::identity_op,
-    clippy::erasing_op
-)]
+#[allow(clippy::doc_markdown, clippy::missing_errors_doc, clippy::identity_op)]
 mod generated {
-    include!(concat!(env!("OUT_DIR"), "/lis2de12_device.rs"));
+    device_driver::create_device!(
+        device_name: Lis2de12Device,
+        manifest: "src/lis2de12.yaml"
+    );
 }
 
 pub use generated::{Fm, Fs, Lis2de12Device, Odr, St, TempEn, field_sets};
@@ -78,6 +78,7 @@ impl From<Fm> for FifoMode {
 
 /// FIFO configuration options.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[must_use]
 pub struct FifoConfig {
     /// Enable or disable the hardware FIFO.
     pub enable: bool,
@@ -89,6 +90,7 @@ pub struct FifoConfig {
 
 impl FifoConfig {
     /// Disabled FIFO configuration helper.
+    #[must_use]
     pub const fn disabled() -> Self {
         Self {
             enable: false,
@@ -98,6 +100,7 @@ impl FifoConfig {
     }
 
     /// Enabled FIFO configuration helper with the given mode.
+    #[must_use]
     pub const fn enabled(mode: FifoMode) -> Self {
         Self {
             enable: true,
@@ -107,6 +110,7 @@ impl FifoConfig {
     }
 
     /// Attach a watermark level to this configuration.
+    #[must_use]
     pub const fn with_watermark(self, watermark: u8) -> Self {
         Self {
             watermark: Some(watermark),
@@ -115,14 +119,15 @@ impl FifoConfig {
     }
 
     /// Watermark value written to the device.
+    #[must_use]
     fn effective_threshold(self) -> u8 {
-        if !self.enable {
-            0
-        } else {
+        if self.enable {
             match self.watermark {
                 Some(level) if level <= FIFO_WATERMARK_MAX => level,
                 Some(_) | None => FIFO_WATERMARK_MAX,
             }
+        } else {
+            0
         }
     }
 }
@@ -162,6 +167,7 @@ pub struct AxesEnable {
 
 impl AxesEnable {
     /// Returns `true` if at least one axis is enabled.
+    #[must_use]
     pub const fn any(self) -> bool {
         self.x || self.y || self.z
     }
@@ -233,6 +239,7 @@ impl Lis2de12Config {
 
 /// Parsed FIFO status register snapshot.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[must_use]
 pub struct FifoStatus {
     /// Watermark flag.
     pub watermark: bool,
@@ -246,14 +253,15 @@ pub struct FifoStatus {
 
 impl FifoStatus {
     /// Create a status snapshot from the raw register value.
+    #[must_use]
     pub fn from_raw(raw: field_sets::FifoSrcReg) -> Self {
         let raw_frames = raw.fss();
         let frames = if raw.empty() {
             0
         } else if raw.ovrn_fifo() && raw_frames == 0 {
-            FIFO_CAPACITY as u8
+            FIFO_CAPACITY
         } else {
-            raw_frames.min(FIFO_CAPACITY as u8)
+            raw_frames.min(FIFO_CAPACITY)
         };
 
         Self {
@@ -265,31 +273,37 @@ impl FifoStatus {
     }
 
     /// Number of unread frames currently buffered.
+    #[must_use]
     pub const fn len(self) -> u8 {
         self.frames
     }
 
     /// Returns `true` if the FIFO currently holds data.
+    #[must_use]
     pub const fn has_data(self) -> bool {
         self.frames > 0
     }
 
     /// Remaining capacity before the FIFO becomes full.
+    #[must_use]
     pub const fn remaining_capacity(self) -> u8 {
-        (FIFO_CAPACITY as u8).saturating_sub(self.frames)
+        FIFO_CAPACITY.saturating_sub(self.frames)
     }
 
     /// Returns `true` if the configured watermark has been reached.
+    #[must_use]
     pub const fn is_watermark_triggered(self) -> bool {
         self.watermark
     }
 
     /// Returns `true` if unread data has been overwritten.
+    #[must_use]
     pub const fn is_overrun(self) -> bool {
         self.overrun
     }
 
     /// Returns `true` if the FIFO is empty.
+    #[must_use]
     pub const fn is_empty(self) -> bool {
         self.empty
     }
@@ -305,12 +319,11 @@ fn validate_config_common<E: Debug>(config: &Lis2de12Config) -> Result<(), Error
     if !config.axes.any() {
         return Err(Error::new(ErrorKind::Device));
     }
-    if config.fifo.enable {
-        if let Some(watermark) = config.fifo.watermark {
-            if watermark > FIFO_WATERMARK_MAX {
-                return Err(Error::new(ErrorKind::Param));
-            }
-        }
+    if config.fifo.enable
+        && let Some(watermark) = config.fifo.watermark
+        && watermark > FIFO_WATERMARK_MAX
+    {
+        return Err(Error::new(ErrorKind::Param));
     }
     Ok(())
 }
@@ -354,16 +367,12 @@ where
     type Error = I2C::Error;
     type AddressType = u8;
 
-    fn write_register(
-        &mut self,
-        address: Self::AddressType,
-        _size_bits: u32,
-        data: &[u8],
-    ) -> Result<(), Self::Error> {
+    fn write_register(&mut self, address: Self::AddressType, _size_bits: u32, data: &[u8]) -> Result<(), Self::Error> {
         let mut buf = [0u8; 1 + 8];
         buf[0] = address;
-        buf[1..1 + data.len()].copy_from_slice(data);
-        self.i2c.write(self.address, &buf[..1 + data.len()])
+        let end = 1 + data.len();
+        buf[1..end].copy_from_slice(data);
+        self.i2c.write(self.address, &buf[..end])
     }
 
     fn read_register(
@@ -392,8 +401,9 @@ where
     ) -> Result<(), Self::Error> {
         let mut buf = [0u8; 1 + 8];
         buf[0] = address;
-        buf[1..1 + data.len()].copy_from_slice(data);
-        self.i2c.write(self.address, &buf[..1 + data.len()]).await
+        let end = 1 + data.len();
+        buf[1..end].copy_from_slice(data);
+        self.i2c.write(self.address, &buf[..end]).await
     }
 
     async fn read_register(
@@ -421,22 +431,16 @@ where
         Ok(buf.len())
     }
 
-    fn write(
-        &mut self,
-        address: Self::AddressType,
-        buf: &[u8],
-    ) -> Result<usize, <Self as RegisterInterface>::Error> {
+    fn write(&mut self, address: Self::AddressType, buf: &[u8]) -> Result<usize, <Self as RegisterInterface>::Error> {
         let mut data = [0u8; 1 + 32];
         data[0] = address;
-        data[1..1 + buf.len()].copy_from_slice(buf);
-        self.i2c.write(self.address, &data[..1 + buf.len()])?;
+        let end = 1 + buf.len();
+        data[1..end].copy_from_slice(buf);
+        self.i2c.write(self.address, &data[..end])?;
         Ok(buf.len())
     }
 
-    fn flush(
-        &mut self,
-        _address: Self::AddressType,
-    ) -> Result<(), <Self as RegisterInterface>::Error> {
+    fn flush(&mut self, _address: Self::AddressType) -> Result<(), <Self as RegisterInterface>::Error> {
         Ok(())
     }
 }
@@ -448,24 +452,17 @@ where
 {
     type AddressType = u8;
 
-    async fn read(
-        &mut self,
-        address: Self::AddressType,
-        buf: &mut [u8],
-    ) -> Result<usize, Self::Error> {
+    async fn read(&mut self, address: Self::AddressType, buf: &mut [u8]) -> Result<usize, Self::Error> {
         self.i2c.write_read(self.address, &[address], buf).await?;
         Ok(buf.len())
     }
 
-    async fn write(
-        &mut self,
-        address: Self::AddressType,
-        buf: &[u8],
-    ) -> Result<usize, Self::Error> {
+    async fn write(&mut self, address: Self::AddressType, buf: &[u8]) -> Result<usize, Self::Error> {
         let mut data = [0u8; 1 + 32];
         data[0] = address;
-        data[1..1 + buf.len()].copy_from_slice(buf);
-        self.i2c.write(self.address, &data[..1 + buf.len()]).await?;
+        let end = 1 + buf.len();
+        data[1..end].copy_from_slice(buf);
+        self.i2c.write(self.address, &data[..end]).await?;
         Ok(buf.len())
     }
 
@@ -508,11 +505,7 @@ where
     }
 
     /// Create a new driver with an explicit configuration.
-    pub fn new_with_config(
-        i2c: I2C,
-        addr: SlaveAddr,
-        config: Lis2de12Config,
-    ) -> Result<Self, Error<I2C::Error>> {
+    pub fn new_with_config(i2c: I2C, addr: SlaveAddr, config: Lis2de12Config) -> Result<Self, Error<I2C::Error>> {
         validate_config_common::<I2C::Error>(&config)?;
 
         let interface = DeviceInterface {
@@ -574,10 +567,7 @@ where
 
     /// Read multiple FIFO frames into the provided slice, returning the number retrieved.
     /// Reading stops early if the FIFO does not currently hold enough data.
-    pub fn read_fifo_frames(
-        &mut self,
-        frames: &mut [FifoFrame],
-    ) -> Result<usize, Error<I2C::Error>> {
+    pub fn read_fifo_frames(&mut self, frames: &mut [FifoFrame]) -> Result<usize, Error<I2C::Error>> {
         if frames.is_empty() {
             return Ok(0);
         }
@@ -625,7 +615,7 @@ where
     pub fn reboot(&mut self) -> Result<(), Error<I2C::Error>> {
         self.device
             .ctrl_reg_5()
-            .write(|reg| reg.set_boot(true))
+            .write(|reg: &mut field_sets::CtrlReg5| reg.set_boot(true))
             .map_err(Error::from)
     }
 
@@ -642,12 +632,8 @@ where
     fn write_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<I2C::Error>> {
         self.device
             .temp_cfg_reg()
-            .write(|reg| {
-                reg.set_temp_en(if enable {
-                    TempEn::TempEn
-                } else {
-                    TempEn::TempDis
-                });
+            .write(|reg: &mut field_sets::TempCfgReg| {
+                reg.set_temp_en(if enable { TempEn::TempEn } else { TempEn::TempDis });
             })
             .map_err(Error::from)
     }
@@ -655,7 +641,7 @@ where
     fn apply_config(&mut self, config: Lis2de12Config) -> Result<(), Error<I2C::Error>> {
         self.device
             .ctrl_reg_1()
-            .write(|reg| {
+            .write(|reg: &mut field_sets::CtrlReg1| {
                 reg.set_odr(config.odr);
                 reg.set_lpen(config.mode.lpen());
                 reg.set_xen(config.axes.x);
@@ -666,7 +652,7 @@ where
 
         self.device
             .ctrl_reg_4()
-            .write(|reg| {
+            .write(|reg: &mut field_sets::CtrlReg4| {
                 reg.set_bdu(config.block_data_update);
                 reg.set_fs(config.scale);
                 reg.set_st(St::Normal);
@@ -676,14 +662,14 @@ where
 
         self.device
             .ctrl_reg_5()
-            .write(|reg| {
+            .write(|reg: &mut field_sets::CtrlReg5| {
                 reg.set_fifo_en(config.fifo.enable);
             })
             .map_err(Error::from)?;
 
         self.device
             .fifo_ctrl_reg()
-            .write(|reg| {
+            .write(|reg: &mut field_sets::FifoCtrlReg| {
                 reg.set_fm(config.fifo.mode.into());
                 reg.set_tr(false);
                 reg.set_fth(config.fifo.effective_threshold());
@@ -725,11 +711,7 @@ where
     }
 
     /// Create a new async driver with an explicit configuration.
-    pub async fn new_with_config(
-        i2c: I2C,
-        addr: SlaveAddr,
-        config: Lis2de12Config,
-    ) -> Result<Self, Error<I2C::Error>> {
+    pub async fn new_with_config(i2c: I2C, addr: SlaveAddr, config: Lis2de12Config) -> Result<Self, Error<I2C::Error>> {
         validate_config_common::<I2C::Error>(&config)?;
 
         let interface = DeviceInterfaceAsync {
@@ -780,10 +762,7 @@ where
         let mut fifo = self.device.fifo_read_start();
         let mut offset = 0;
         while offset < buf.len() {
-            let read = fifo
-                .read_async(&mut buf[offset..])
-                .await
-                .map_err(Error::from)?;
+            let read = fifo.read_async(&mut buf[offset..]).await.map_err(Error::from)?;
             if read == 0 {
                 return Err(Error::new(ErrorKind::Device));
             }
@@ -793,10 +772,7 @@ where
     }
 
     /// Read multiple FIFO frames asynchronously, returning the number retrieved.
-    pub async fn read_fifo_frames(
-        &mut self,
-        frames: &mut [FifoFrame],
-    ) -> Result<usize, Error<I2C::Error>> {
+    pub async fn read_fifo_frames(&mut self, frames: &mut [FifoFrame]) -> Result<usize, Error<I2C::Error>> {
         if frames.is_empty() {
             return Ok(0);
         }
@@ -829,12 +805,7 @@ where
 
     /// Read the FIFO source register asynchronously and return the parsed status snapshot.
     pub async fn fifo_status(&mut self) -> Result<FifoStatus, Error<I2C::Error>> {
-        let status = self
-            .device
-            .fifo_src_reg()
-            .read_async()
-            .await
-            .map_err(Error::from)?;
+        let status = self.device.fifo_src_reg().read_async().await.map_err(Error::from)?;
         Ok(FifoStatus::from(status))
     }
 
@@ -849,7 +820,7 @@ where
     pub async fn reboot(&mut self) -> Result<(), Error<I2C::Error>> {
         self.device
             .ctrl_reg_5()
-            .write_async(|reg| reg.set_boot(true))
+            .write_async(|reg: &mut field_sets::CtrlReg5| reg.set_boot(true))
             .await
             .map_err(Error::from)
     }
@@ -867,12 +838,8 @@ where
     async fn write_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<I2C::Error>> {
         self.device
             .temp_cfg_reg()
-            .write_async(|reg| {
-                reg.set_temp_en(if enable {
-                    TempEn::TempEn
-                } else {
-                    TempEn::TempDis
-                });
+            .write_async(|reg: &mut field_sets::TempCfgReg| {
+                reg.set_temp_en(if enable { TempEn::TempEn } else { TempEn::TempDis });
             })
             .await
             .map_err(Error::from)
@@ -881,7 +848,7 @@ where
     async fn apply_config(&mut self, config: Lis2de12Config) -> Result<(), Error<I2C::Error>> {
         self.device
             .ctrl_reg_1()
-            .write_async(|reg| {
+            .write_async(|reg: &mut field_sets::CtrlReg1| {
                 reg.set_odr(config.odr);
                 reg.set_lpen(config.mode.lpen());
                 reg.set_xen(config.axes.x);
@@ -893,7 +860,7 @@ where
 
         self.device
             .ctrl_reg_4()
-            .write_async(|reg| {
+            .write_async(|reg: &mut field_sets::CtrlReg4| {
                 reg.set_bdu(config.block_data_update);
                 reg.set_fs(config.scale);
                 reg.set_st(St::Normal);
@@ -904,7 +871,7 @@ where
 
         self.device
             .ctrl_reg_5()
-            .write_async(|reg| {
+            .write_async(|reg: &mut field_sets::CtrlReg5| {
                 reg.set_fifo_en(config.fifo.enable);
             })
             .await
@@ -912,7 +879,7 @@ where
 
         self.device
             .fifo_ctrl_reg()
-            .write_async(|reg| {
+            .write_async(|reg: &mut field_sets::FifoCtrlReg| {
                 reg.set_fm(config.fifo.mode.into());
                 reg.set_tr(false);
                 reg.set_fth(config.fifo.effective_threshold());
@@ -920,15 +887,12 @@ where
             .await
             .map_err(Error::from)?;
 
-        self.write_temperature_sensor(config.temperature_enable)
-            .await?;
+        self.write_temperature_sensor(config.temperature_enable).await?;
         Ok(())
     }
 }
 
-fn verify_device_id<I2C>(
-    device: &mut Lis2de12Device<DeviceInterface<I2C>>,
-) -> Result<(), Error<I2C::Error>>
+fn verify_device_id<I2C>(device: &mut Lis2de12Device<DeviceInterface<I2C>>) -> Result<(), Error<I2C::Error>>
 where
     I2C: I2c,
 {
@@ -990,8 +954,9 @@ fn scale_to_g(raw: I16x3, g_per_lsb: f32) -> F32x3 {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use core::f32::EPSILON;
+
+    use super::*;
 
     #[test]
     fn validate_config_requires_enabled_axis() {
@@ -1036,10 +1001,7 @@ mod tests {
         assert!(!status.is_overrun());
         assert!(!status.is_empty());
         assert_eq!(status.len(), 5);
-        assert_eq!(
-            status.remaining_capacity(),
-            (FIFO_CAPACITY as u8).saturating_sub(5)
-        );
+        assert_eq!(status.remaining_capacity(), (FIFO_CAPACITY as u8).saturating_sub(5));
     }
 
     #[test]

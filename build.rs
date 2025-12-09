@@ -1,27 +1,24 @@
 #![doc = "Build script that generates the LIS2DE12 register API from the YAML manifest."]
 
-use std::{env, fs, io, path::PathBuf, str::FromStr};
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::{env, fs, io};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/lis2de12.yaml");
 
-    let manifest_dir =
-        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set"));
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR must be set"));
     let manifest_path = manifest_dir.join("src/lis2de12.yaml");
     let manifest = fs::read_to_string(&manifest_path)?;
 
     let generated = device_driver_generation::transform_yaml(&manifest, "Lis2de12Device");
 
-    let tokens = proc_macro2::TokenStream::from_str(&generated).map_err(|err| {
-        io::Error::other(format!("Failed to parse generated device tokens: {err}"))
-    })?;
+    let tokens = proc_macro2::TokenStream::from_str(&generated)
+        .map_err(|err| io::Error::other(format!("Failed to parse generated device tokens: {err}")))?;
 
-    let syntax_tree = syn::parse2::<syn::File>(tokens).map_err(|err| {
-        io::Error::other(format!(
-            "Failed to build syntax tree for generated device: {err}"
-        ))
-    })?;
+    let syntax_tree = syn::parse2::<syn::File>(tokens)
+        .map_err(|err| io::Error::other(format!("Failed to build syntax tree for generated device: {err}")))?;
 
     let formatted = prettyplease::unparse(&syntax_tree);
 
