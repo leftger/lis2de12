@@ -48,6 +48,7 @@ WHO_AM_I:
   description: Device identification register
   address: 0x0F
   size_bits: 8
+  reset_value: 0x33
   access: RO
 
 CTRL_REG0:
@@ -137,6 +138,29 @@ CTRL_REG1:
         FiveThousandHz:
           value: 0b1001
           description: 5376Hz sampling rate
+    LPEN:
+      base: bool
+      start: 3
+      access: RW
+      description: |
+        Low-power enable
+        0: Normal mode
+        1: Low-power mode
+    ZEN:
+      base: bool
+      start: 2
+      access: RW
+      description: Z-axis enable
+    YEN:
+      base: bool
+      start: 1
+      access: RW
+      description: Y-axis enable
+    XEN:
+      base: bool
+      start: 0
+      access: RW
+      description: X-axis enable
 
 CTRL_REG2:
   type: register
@@ -419,11 +443,17 @@ STATUS_REG:
       description: X-axis new data available
 
 FIFO_READ_START:
-  type: register
+  type: buffer
   description: FIFO read start
   address: 0x28
+  access: RO
+
+OUT_X_L:
+  type: register
+  description: X-axis acceleration data (LSB)
+  address: 0x28
   size_bits: 8
-  reset_value: 0x00
+  access: RO
 
 OUT_X_H:
   type: register
@@ -885,6 +915,6 @@ ACT_DUR:
     ActD:
       base: uint
       start: 0
-      end: 7
+      end: 8
       access: RW
       description: Duration

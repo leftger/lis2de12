@@ -7,9 +7,8 @@ Platform-agnostic Rust driver for the ST LIS2DE12 ultra-low-power 3-axis acceler
 ## Features
 
 - High-level blocking driver implementing `accelerometer::RawAccelerometer`
-- Optional async driver (`Lis2de12Async`) built on `embedded-hal-async`
+- Optional async driver (`Lis2de12Async`)
 - Auto-generated register-level API via [`device-driver`](https://crates.io/crates/device-driver)
-- Strict lints (`#![deny(missing_docs)]`, `#![deny(warnings)]`) for production readiness
 - `no_std` compatible with optional `defmt` logging integration
 
 ---
@@ -49,6 +48,37 @@ where
 
 ---
 
+## Configuring the sensor
+
+Use `Lis2de12Config` to bring the device out of power-down with your preferred output data rate, operating mode, scale, axis enables, and temperature sensing:
+
+```/dev/null/examples/config.rs#L1-27
+use embedded_hal::i2c::blocking::I2c;
+use lis2de12::{
+    AxesEnable, Fs, Lis2de12, Lis2de12Config, OperatingMode, Odr, SlaveAddr,
+};
+
+fn init_with_config<I2C>(i2c: I2C) -> Result<(), lis2de12::Error<I2C::Error>>
+where
+    I2C: I2c,
+{
+    let config = Lis2de12Config {
+        odr: Odr::FiftyHz,
+        mode: OperatingMode::Normal,
+        scale: Fs::PlusMinus4G,
+        axes: AxesEnable { x: true, y: true, z: true },
+        block_data_update: true,
+        temperature_enable: true,
+    };
+
+    let mut lis = Lis2de12::new_with_config(i2c, SlaveAddr::Default, config)?;
+    defmt::info!("Sensor configured with 50 Hz output");
+    Ok(())
+}
+```
+
+---
+
 ## Asynchronous usage (Embassy, RTIC, etc.)
 
 Enable the `async` feature and depend on `embedded-hal-async`:
@@ -76,24 +106,54 @@ async fn main(_spawner: Spawner) {
 
 ---
 
+## Reading scaled samples
+
+Both blocking and async drivers provide `read_raw`, `read_mg`, and `read_g` helpers to obtain measurements in the format that best suits your application:
+
+```/dev/null/examples/scaled.rs#L1-24
+use embedded_hal::i2c::blocking::I2c;
+use lis2de12::{Lis2de12, SlaveAddr};
+
+fn read_scaled<I2C>(bus: I2C) -> Result<(), lis2de12::Error<I2C::Error>>
+where
+    I2C: I2c,
+{
+    let mut lis = Lis2de12::new(bus, SlaveAddr::Default)?;
+    let raw = lis.read_raw()?;
+    let mg = lis.read_mg()?;
+    let g = lis.read_g()?;
+    defmt::info!("raw={:?}, mg={:?}, g={:?}", raw, mg, g);
+    Ok(())
+}
+```
+
+The async variant exposes the same API surface, returning futures for each method.
+
+---
+
 ## Register-level access
 
 For advanced configuration you can interact with the generated register API directly:
 
 ```/dev/null/examples/registers.rs#L1-28
-use lis2de12::{Lis2de12, SlaveAddr, generated::CtrlReg1};
+use lis2de12::{Lis2de12, Odr, SlaveAddr};
 
-fn enable_high_resolution<I2C>(i2c: I2C) -> Result<(), lis2de12::Error<I2C::Error>>
+fn configure_normal_mode<I2C>(i2c: I2C) -> Result<(), lis2de12::Error<I2C::Error>>
 where
     I2C: embedded_hal::i2c::I2c,
 {
     let mut lis = Lis2de12::new(i2c, SlaveAddr::Default)?;
 
-    let mut ctrl1 = CtrlReg1::default();
-    ctrl1.set_odr(0b0101); // 100 Hz
-    ctrl1.set_lpen(false); // high-resolution mode
-
-    lis.device().ctrl_reg1.write(ctrl1)?;
+    lis
+        .device()
+        .ctrl_reg_1()
+        .write(|reg| {
+            reg.set_odr(Odr::HundredHz);
+            reg.set_lpen(false); // normal mode (low-power disabled)
+            reg.set_xen(true);
+            reg.set_yen(true);
+            reg.set_zen(true);
+        })?;
     Ok(())
 }
 ```
