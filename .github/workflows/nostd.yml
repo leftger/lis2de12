@@ -14,11 +14,22 @@ name: no-std
 jobs:
   nostd:
     runs-on: ubuntu-latest
-    name: ${{ matrix.target }}
+    name: ${{ matrix.target }} / ${{ matrix.feature }}
     strategy:
       matrix:
-        target: [thumbv8m.main-none-eabihf]
-        chip-rev: [r1, r3, r4, r5]
+        include:
+          - target: thumbv8m.main-none-eabihf
+            feature: default
+            cargo_check_args: ""
+          - target: thumbv8m.main-none-eabihf
+            feature: async
+            cargo_check_args: "--features async"
+          - target: thumbv8m.main-none-eabihf
+            feature: defmt-03
+            cargo_check_args: "--features defmt-03"
+          - target: thumbv8m.main-none-eabihf
+            feature: all
+            cargo_check_args: "--all-features"
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,5 +38,5 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: rustup target add ${{ matrix.target }}
         run: rustup target add ${{ matrix.target }}
-      - name: cargo check ${{ matrix.chip-rev }}
-        run: cargo check --target ${{ matrix.target }} --features ${{ matrix.chip-rev }}
+      - name: cargo check (${{ matrix.feature }})
+        run: cargo check --target ${{ matrix.target }} ${{ matrix.cargo_check_args }}
