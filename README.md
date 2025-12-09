@@ -131,6 +131,38 @@ The async variant exposes the same API surface, returning futures for each metho
 
 ---
 
+## FIFO configuration and burst reads
+
+Configure the hardware FIFO to collect XYZ frames and drain them in bursts when the watermark is reached:
+
+```/dev/null/examples/fifo_blocking.rs#L1-32
+use embedded_hal::i2c::blocking::I2c;
+use lis2de12::{
+    FifoConfig, FifoMode, Lis2de12, Lis2de12Config, SlaveAddr,
+};
+
+fn read_fifo<I2C>(bus: I2C) -> Result<(), lis2de12::Error<I2C::Error>>
+where
+    I2C: I2c,
+{
+    let mut config = Lis2de12Config::default();
+    config.fifo = FifoConfig::enabled(FifoMode::Stream).with_watermark(8);
+
+    let mut lis = Lis2de12::new_with_config(bus, SlaveAddr::Default, config)?;
+    let status = lis.fifo_status()?;
+    if status.has_data() {
+        let mut frames = [[0u8; lis2de12::FIFO_FRAME_BYTES]; 4];
+        let read = lis.read_fifo_frames(&mut frames)?;
+        defmt::info!("drained {} frames", read);
+    }
+    Ok(())
+}
+```
+
+Async users get identical functionality via `Lis2de12Async::read_fifo_frame`, `read_fifo_frames`, and `drain_fifo`.
+
+---
+
 ## Register-level access
 
 For advanced configuration you can interact with the generated register API directly:

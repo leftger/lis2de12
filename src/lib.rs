@@ -19,6 +19,12 @@ use hal_async::i2c::I2c as AsyncI2c;
 
 #[allow(unsafe_code)]
 #[allow(missing_docs)]
+#[allow(
+    clippy::doc_markdown,
+    clippy::missing_errors_doc,
+    clippy::identity_op,
+    clippy::erasing_op
+)]
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/lis2de12_device.rs"));
 }
