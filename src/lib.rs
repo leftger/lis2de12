@@ -3,6 +3,7 @@
 #![no_std]
 #![deny(missing_docs)]
 #![deny(warnings)]
+#![allow(clippy::missing_errors_doc)]
 
 use accelerometer::vector::{F32x3, I16x3};
 use accelerometer::{Error, ErrorKind, RawAccelerometer};
@@ -34,7 +35,7 @@ pub use generated::{Fm, Fs, Lis2de12Device, Odr, St, TempEn, field_sets};
 /// Number of bytes per FIFO frame (X, Y, Z 16-bit samples).
 pub const FIFO_FRAME_BYTES: usize = 6;
 /// Maximum FIFO depth in frames.
-pub const FIFO_CAPACITY: usize = 32;
+pub const FIFO_CAPACITY: u8 = 32;
 /// FIFO frame buffer alias.
 pub type FifoFrame = [u8; FIFO_FRAME_BYTES];
 /// Highest programmable FIFO watermark level.

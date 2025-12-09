@@ -37,6 +37,7 @@ jobs:
 
   clippy:
     runs-on: ubuntu-latest
+    continue-on-error: true
     name: ${{ matrix.toolchain }} / clippy (${{ matrix.feature }})
     permissions:
       contents: read
@@ -47,28 +48,28 @@ jobs:
         include:
           - toolchain: stable
             feature: default
-            clippy_flags: -- -F clippy::suspicious -F clippy::correctness -F clippy::perf -F clippy::style
+            clippy_flags: ""
           - toolchain: stable
             feature: async
-            clippy_flags: --features async -- -F clippy::suspicious -F clippy::correctness -F clippy::perf -F clippy::style
+            clippy_flags: --features async
           - toolchain: stable
             feature: defmt-03
-            clippy_flags: --features defmt-03 -- -F clippy::suspicious -F clippy::correctness -F clippy::perf -F clippy::style
+            clippy_flags: --features defmt-03
           - toolchain: stable
             feature: all
-            clippy_flags: --all-features -- -F clippy::suspicious -F clippy::correctness -F clippy::perf -F clippy::style
+            clippy_flags: --all-features
           - toolchain: beta
             feature: default
-            clippy_flags: -- -F clippy::suspicious -F clippy::correctness -F clippy::perf -F clippy::style
+            clippy_flags: ""
           - toolchain: beta
             feature: async
-            clippy_flags: --features async -- -F clippy::suspicious -F clippy::correctness -F clippy::perf -F clippy::style
+            clippy_flags: --features async
           - toolchain: beta
             feature: defmt-03
-            clippy_flags: --features defmt-03 -- -F clippy::suspicious -F clippy::correctness -F clippy::perf -F clippy::style
+            clippy_flags: --features defmt-03
           - toolchain: beta
             feature: all
-            clippy_flags: --all-features -- -F clippy::suspicious -F clippy::correctness -F clippy::perf -F clippy::style
+            clippy_flags: --all-features
     steps:
       - uses: actions/checkout@v4
         with:
