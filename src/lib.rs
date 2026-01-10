@@ -1,4 +1,100 @@
 //! High-level LIS2DE12 accelerometer driver with synchronous and asynchronous FIFO helpers.
+//!
+//! This driver supports both I2C and SPI communication interfaces, with blocking and async modes.
+//!
+//! # Examples
+//!
+//! ## Blocking I2C
+//!
+//! ```no_run
+//! use lis2de12::{Lis2de12, SlaveAddr};
+//! # use embedded_hal::i2c::I2c;
+//! # fn example<I2C: I2c>(i2c: I2C) -> Result<(), lis2de12::Error<I2C::Error>>
+//! # where I2C::Error: core::fmt::Debug {
+//!
+//! // Create driver with default configuration
+//! let mut sensor = Lis2de12::new_i2c(i2c, SlaveAddr::default())?;
+//!
+//! // Read acceleration in g (floating point)
+//! let accel = sensor.read_g()?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Blocking SPI
+//!
+//! ```no_run
+//! use lis2de12::Lis2de12;
+//! # use embedded_hal::spi::SpiDevice;
+//! # fn example<SPI: SpiDevice>(spi: SPI) -> Result<(), lis2de12::Error<SPI::Error>>
+//! # where SPI::Error: core::fmt::Debug {
+//!
+//! // Create driver with SPI interface
+//! let mut sensor = Lis2de12::new_spi(spi)?;
+//!
+//! // Read acceleration in milli-g (integer)
+//! let accel_mg = sensor.read_mg()?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Async I2C
+//!
+//! ```no_run
+//! use lis2de12::{Lis2de12Async, SlaveAddr};
+//! # use embedded_hal_async::i2c::I2c;
+//! # async fn example<I2C: I2c>(i2c: I2C) -> Result<(), lis2de12::Error<I2C::Error>>
+//! # where I2C::Error: core::fmt::Debug {
+//!
+//! // Create async driver with I2C
+//! let mut sensor = Lis2de12Async::new_i2c(i2c, SlaveAddr::default()).await?;
+//!
+//! // Read acceleration asynchronously
+//! let accel = sensor.read_g().await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Async SPI
+//!
+//! ```no_run
+//! use lis2de12::Lis2de12Async;
+//! # use embedded_hal_async::spi::SpiDevice;
+//! # async fn example<SPI: SpiDevice>(spi: SPI) -> Result<(), lis2de12::Error<SPI::Error>>
+//! # where SPI::Error: core::fmt::Debug {
+//!
+//! // Create async driver with SPI
+//! let mut sensor = Lis2de12Async::new_spi(spi).await?;
+//!
+//! // Read acceleration asynchronously
+//! let accel = sensor.read_g().await?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Custom Configuration
+//!
+//! ```no_run
+//! use lis2de12::{Lis2de12, Lis2de12Config, SlaveAddr, Odr, Fs};
+//! # use embedded_hal::i2c::I2c;
+//! # fn example<I2C: I2c>(i2c: I2C) -> Result<(), lis2de12::Error<I2C::Error>>
+//! # where I2C::Error: core::fmt::Debug {
+//!
+//! let config = Lis2de12Config {
+//!     odr: Odr::Hz400,           // 400 Hz output data rate
+//!     scale: Fs::G8,             // ±8g full scale
+//!     ..Default::default()
+//! };
+//!
+//! let mut sensor = Lis2de12::new_i2c_with_config(i2c, SlaveAddr::default(), config)?;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! # SPI Mode
+//!
+//! The LIS2DE12 requires SPI Mode 0 or Mode 3 (CPOL=0, CPHA=0 or CPOL=1, CPHA=1).
+//! The driver uses the `embedded-hal` `SpiDevice` trait which handles chip select automatically.
 
 #![no_std]
 #![deny(missing_docs)]
@@ -19,6 +115,8 @@ use embedded_hal_async as hal_async;
 use hal::i2c::I2c;
 #[cfg(feature = "async")]
 use hal_async::i2c::I2c as AsyncI2c;
+#[cfg(feature = "async")]
+use hal_async::spi::SpiDevice as AsyncSpiDevice;
 
 #[allow(unsafe_code)]
 #[allow(missing_docs)]
@@ -345,6 +443,19 @@ pub struct DeviceInterfaceAsync<I2C> {
     pub address: u8,
 }
 
+/// Blocking SPI interface wrapper.
+pub struct SpiInterface<SPI> {
+    /// Underlying SPI bus (with CS management).
+    pub spi: SPI,
+}
+
+/// Asynchronous SPI interface wrapper.
+#[cfg(feature = "async")]
+pub struct SpiInterfaceAsync<SPI> {
+    /// Underlying async SPI bus (with CS management).
+    pub spi: SPI,
+}
+
 impl<I2C> BufferInterfaceError for DeviceInterface<I2C>
 where
     I2C: hal::i2c::I2c,
@@ -471,6 +582,150 @@ where
     }
 }
 
+impl<SPI> BufferInterfaceError for SpiInterface<SPI>
+where
+    SPI: hal::spi::SpiDevice,
+{
+    type Error = SPI::Error;
+}
+
+#[cfg(feature = "async")]
+impl<SPI> BufferInterfaceError for SpiInterfaceAsync<SPI>
+where
+    SPI: hal_async::spi::SpiDevice,
+{
+    type Error = SPI::Error;
+}
+
+impl<SPI> RegisterInterface for SpiInterface<SPI>
+where
+    SPI: hal::spi::SpiDevice,
+{
+    type Error = SPI::Error;
+    type AddressType = u8;
+
+    fn write_register(&mut self, address: Self::AddressType, _size_bits: u32, data: &[u8]) -> Result<(), Self::Error> {
+        let mut buf = [0u8; 1 + 8];
+        buf[0] = address; // Write: bit 7 = 0
+        let end = 1 + data.len();
+        buf[1..end].copy_from_slice(data);
+        self.spi.write(&buf[..end])
+    }
+
+    fn read_register(
+        &mut self,
+        address: Self::AddressType,
+        _size_bits: u32,
+        data: &mut [u8],
+    ) -> Result<(), Self::Error> {
+        let addr_byte = 0x80 | address; // Read: bit 7 = 1
+        self.spi.transaction(&mut [
+            hal::spi::Operation::Write(&[addr_byte]),
+            hal::spi::Operation::Read(data),
+        ])
+    }
+}
+
+#[cfg(feature = "async")]
+impl<SPI> AsyncRegisterInterface for SpiInterfaceAsync<SPI>
+where
+    SPI: hal_async::spi::SpiDevice,
+{
+    type Error = SPI::Error;
+    type AddressType = u8;
+
+    async fn write_register(
+        &mut self,
+        address: Self::AddressType,
+        _size_bits: u32,
+        data: &[u8],
+    ) -> Result<(), Self::Error> {
+        let mut buf = [0u8; 1 + 8];
+        buf[0] = address; // Write: bit 7 = 0
+        let end = 1 + data.len();
+        buf[1..end].copy_from_slice(data);
+        self.spi.write(&buf[..end]).await
+    }
+
+    async fn read_register(
+        &mut self,
+        address: Self::AddressType,
+        _size_bits: u32,
+        data: &mut [u8],
+    ) -> Result<(), Self::Error> {
+        let addr_byte = 0x80 | address; // Read: bit 7 = 1
+        self.spi.transaction(&mut [
+            hal_async::spi::Operation::Write(&[addr_byte]),
+            hal_async::spi::Operation::Read(data),
+        ]).await
+    }
+}
+
+impl<SPI> BufferInterface for SpiInterface<SPI>
+where
+    SPI: hal::spi::SpiDevice,
+{
+    type AddressType = u8;
+
+    fn read(
+        &mut self,
+        address: Self::AddressType,
+        buf: &mut [u8],
+    ) -> Result<usize, <Self as RegisterInterface>::Error> {
+        // Multi-byte read: bit 7 = 1 (read), bit 6 = 1 (auto-increment)
+        let addr_byte = 0xC0 | address;
+        self.spi.transaction(&mut [
+            hal::spi::Operation::Write(&[addr_byte]),
+            hal::spi::Operation::Read(buf),
+        ])?;
+        Ok(buf.len())
+    }
+
+    fn write(&mut self, address: Self::AddressType, buf: &[u8]) -> Result<usize, <Self as RegisterInterface>::Error> {
+        let mut data = [0u8; 1 + 32];
+        data[0] = 0x40 | address; // Write with auto-increment: bit 6 = 1
+        let end = 1 + buf.len();
+        data[1..end].copy_from_slice(buf);
+        self.spi.write(&data[..end])?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self, _address: Self::AddressType) -> Result<(), <Self as RegisterInterface>::Error> {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "async")]
+impl<SPI> AsyncBufferInterface for SpiInterfaceAsync<SPI>
+where
+    SPI: hal_async::spi::SpiDevice,
+{
+    type AddressType = u8;
+
+    async fn read(&mut self, address: Self::AddressType, buf: &mut [u8]) -> Result<usize, Self::Error> {
+        // Multi-byte read: bit 7 = 1 (read), bit 6 = 1 (auto-increment)
+        let addr_byte = 0xC0 | address;
+        self.spi.transaction(&mut [
+            hal_async::spi::Operation::Write(&[addr_byte]),
+            hal_async::spi::Operation::Read(buf),
+        ]).await?;
+        Ok(buf.len())
+    }
+
+    async fn write(&mut self, address: Self::AddressType, buf: &[u8]) -> Result<usize, Self::Error> {
+        let mut data = [0u8; 1 + 32];
+        data[0] = 0x40 | address; // Write with auto-increment: bit 6 = 1
+        let end = 1 + buf.len();
+        data[1..end].copy_from_slice(buf);
+        self.spi.write(&data[..end]).await?;
+        Ok(buf.len())
+    }
+
+    async fn flush(&mut self, _address: Self::AddressType) -> Result<(), Self::Error> {
+        Ok(())
+    }
+}
+
 /// Available LIS2DE12 I²C slave addresses (controlled by the SA0 pin).
 pub enum SlaveAddr {
     /// SA0 pulled low (`0x31`).
@@ -489,69 +744,56 @@ impl SlaveAddr {
 }
 
 /// Blocking LIS2DE12 driver.
-pub struct Lis2de12<I2C> {
-    device: Lis2de12Device<DeviceInterface<I2C>>,
+pub struct Lis2de12<IFACE> {
+    device: Lis2de12Device<IFACE>,
     config: Lis2de12Config,
 }
 
-impl<I2C> Lis2de12<I2C>
+/// Type alias for I2C-based blocking driver.
+pub type Lis2de12I2c<I2C> = Lis2de12<DeviceInterface<I2C>>;
+
+/// Type alias for SPI-based blocking driver.
+pub type Lis2de12Spi<SPI> = Lis2de12<SpiInterface<SPI>>;
+
+// Generic implementation for all interface types
+impl<IFACE> Lis2de12<IFACE>
 where
-    I2C: I2c,
-    I2C::Error: Debug,
+    IFACE: RegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error> + BufferInterface<AddressType = u8>,
+    <IFACE as RegisterInterface>::Error: Debug,
 {
-    /// Create a new driver with the default configuration.
-    pub fn new(i2c: I2C, addr: SlaveAddr) -> Result<Self, Error<I2C::Error>> {
-        Self::new_with_config(i2c, addr, Lis2de12Config::default())
-    }
-
-    /// Create a new driver with an explicit configuration.
-    pub fn new_with_config(i2c: I2C, addr: SlaveAddr, config: Lis2de12Config) -> Result<Self, Error<I2C::Error>> {
-        validate_config_common::<I2C::Error>(&config)?;
-
-        let interface = DeviceInterface {
-            i2c,
-            address: addr.addr(),
-        };
-        let mut device = Lis2de12Device::new(interface);
-        verify_device_id(&mut device)?;
-        let mut this = Self { device, config };
-        this.apply_config(config)?;
-        Ok(this)
-    }
-
     /// Return the active configuration.
     pub const fn config(&self) -> Lis2de12Config {
         self.config
     }
 
     /// Update the sensor configuration.
-    pub fn set_config(&mut self, config: Lis2de12Config) -> Result<(), Error<I2C::Error>> {
-        validate_config_common::<I2C::Error>(&config)?;
+    pub fn set_config(&mut self, config: Lis2de12Config) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+        validate_config_common::<<IFACE as RegisterInterface>::Error>(&config)?;
         self.apply_config(config)?;
         self.config = config;
         Ok(())
     }
 
     /// Read raw acceleration sample triplet.
-    pub fn read_raw(&mut self) -> Result<I16x3, Error<I2C::Error>> {
+    pub fn read_raw(&mut self) -> Result<I16x3, Error<<IFACE as RegisterInterface>::Error>> {
         let frame = self.read_fifo_frame()?;
         Ok(decode_raw(&frame, self.config.mode))
     }
 
     /// Read acceleration expressed in milli-g.
-    pub fn read_mg(&mut self) -> Result<I16x3, Error<I2C::Error>> {
+    pub fn read_mg(&mut self) -> Result<I16x3, Error<<IFACE as RegisterInterface>::Error>> {
         let raw = self.read_raw()?;
         Ok(scale_to_mg(raw, self.config.sensitivity_mg_per_lsb()))
     }
 
     /// Read acceleration expressed in g (floating point).
-    pub fn read_g(&mut self) -> Result<F32x3, Error<I2C::Error>> {
+    pub fn read_g(&mut self) -> Result<F32x3, Error<<IFACE as RegisterInterface>::Error>> {
         let raw = self.read_raw()?;
         Ok(scale_to_g(raw, self.config.sensitivity_g_per_lsb()))
     }
 
     /// Read a single FIFO frame (XYZ sample) using blocking I²C transfers.
-    pub fn read_fifo_frame(&mut self) -> Result<FifoFrame, Error<I2C::Error>> {
+    pub fn read_fifo_frame(&mut self) -> Result<FifoFrame, Error<<IFACE as RegisterInterface>::Error>> {
         let mut buf: FifoFrame = [0; FIFO_FRAME_BYTES];
         let mut fifo = self.device.fifo_read_start();
         let mut offset = 0;
@@ -567,7 +809,7 @@ where
 
     /// Read multiple FIFO frames into the provided slice, returning the number retrieved.
     /// Reading stops early if the FIFO does not currently hold enough data.
-    pub fn read_fifo_frames(&mut self, frames: &mut [FifoFrame]) -> Result<usize, Error<I2C::Error>> {
+    pub fn read_fifo_frames(&mut self, frames: &mut [FifoFrame]) -> Result<usize, Error<<IFACE as RegisterInterface>::Error>> {
         if frames.is_empty() {
             return Ok(0);
         }
@@ -585,7 +827,7 @@ where
     }
 
     /// Drain all available FIFO frames, discarding their contents.
-    pub fn drain_fifo(&mut self) -> Result<usize, Error<I2C::Error>> {
+    pub fn drain_fifo(&mut self) -> Result<usize, Error<<IFACE as RegisterInterface>::Error>> {
         let mut drained = 0;
         loop {
             let status = self.fifo_status()?;
@@ -599,37 +841,27 @@ where
     }
 
     /// Read the FIFO source register and return the parsed status snapshot.
-    pub fn fifo_status(&mut self) -> Result<FifoStatus, Error<I2C::Error>> {
+    pub fn fifo_status(&mut self) -> Result<FifoStatus, Error<<IFACE as RegisterInterface>::Error>> {
         let status = self.device.fifo_src_reg().read().map_err(Error::from)?;
         Ok(FifoStatus::from(status))
     }
 
     /// Enable or disable the on-die temperature sensor.
-    pub fn set_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<I2C::Error>> {
+    pub fn set_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.write_temperature_sensor(enable)?;
         self.config.temperature_enable = enable;
         Ok(())
     }
 
     /// Issue a reboot command to reload memory content.
-    pub fn reboot(&mut self) -> Result<(), Error<I2C::Error>> {
+    pub fn reboot(&mut self) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.device
             .ctrl_reg_5()
             .write(|reg: &mut field_sets::CtrlReg5| reg.set_boot(true))
             .map_err(Error::from)
     }
 
-    /// Access the generated register API directly.
-    pub fn device(&mut self) -> &mut Lis2de12Device<DeviceInterface<I2C>> {
-        &mut self.device
-    }
-
-    /// Consume the driver and return the underlying I²C bus.
-    pub fn destroy(self) -> I2C {
-        self.device.interface.i2c
-    }
-
-    fn write_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<I2C::Error>> {
+    fn write_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.device
             .temp_cfg_reg()
             .write(|reg: &mut field_sets::TempCfgReg| {
@@ -638,7 +870,7 @@ where
             .map_err(Error::from)
     }
 
-    fn apply_config(&mut self, config: Lis2de12Config) -> Result<(), Error<I2C::Error>> {
+    fn apply_config(&mut self, config: Lis2de12Config) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.device
             .ctrl_reg_1()
             .write(|reg: &mut field_sets::CtrlReg1| {
@@ -681,11 +913,93 @@ where
     }
 }
 
-impl<I2C> RawAccelerometer<I16x3> for Lis2de12<I2C>
+// I2C-specific constructors and methods
+impl<I2C> Lis2de12<DeviceInterface<I2C>>
 where
     I2C: I2c,
+    I2C::Error: Debug,
 {
-    type Error = I2C::Error;
+    /// Create a new I2C driver with the default configuration.
+    pub fn new_i2c(i2c: I2C, addr: SlaveAddr) -> Result<Self, Error<I2C::Error>> {
+        Self::new_i2c_with_config(i2c, addr, Lis2de12Config::default())
+    }
+
+    /// Create a new I2C driver with an explicit configuration.
+    pub fn new_i2c_with_config(i2c: I2C, addr: SlaveAddr, config: Lis2de12Config) -> Result<Self, Error<I2C::Error>> {
+        validate_config_common::<I2C::Error>(&config)?;
+
+        let interface = DeviceInterface {
+            i2c,
+            address: addr.addr(),
+        };
+        let mut device = Lis2de12Device::new(interface);
+        verify_device_id(&mut device)?;
+        let mut this = Self { device, config };
+        this.apply_config(config)?;
+        Ok(this)
+    }
+
+    /// Create a new driver with the default configuration (backward compatible, uses I2C).
+    pub fn new(i2c: I2C, addr: SlaveAddr) -> Result<Self, Error<I2C::Error>> {
+        Self::new_i2c(i2c, addr)
+    }
+
+    /// Create a new driver with an explicit configuration (backward compatible, uses I2C).
+    pub fn new_with_config(i2c: I2C, addr: SlaveAddr, config: Lis2de12Config) -> Result<Self, Error<I2C::Error>> {
+        Self::new_i2c_with_config(i2c, addr, config)
+    }
+
+    /// Access the generated register API directly.
+    pub fn device(&mut self) -> &mut Lis2de12Device<DeviceInterface<I2C>> {
+        &mut self.device
+    }
+
+    /// Consume the driver and return the underlying I²C bus.
+    pub fn destroy(self) -> I2C {
+        self.device.interface.i2c
+    }
+}
+
+// SPI-specific constructors and methods
+impl<SPI> Lis2de12<SpiInterface<SPI>>
+where
+    SPI: hal::spi::SpiDevice,
+    SPI::Error: Debug,
+{
+    /// Create a new SPI driver with the default configuration.
+    pub fn new_spi(spi: SPI) -> Result<Self, Error<SPI::Error>> {
+        Self::new_spi_with_config(spi, Lis2de12Config::default())
+    }
+
+    /// Create a new SPI driver with an explicit configuration.
+    pub fn new_spi_with_config(spi: SPI, config: Lis2de12Config) -> Result<Self, Error<SPI::Error>> {
+        validate_config_common::<SPI::Error>(&config)?;
+
+        let interface = SpiInterface { spi };
+        let mut device = Lis2de12Device::new(interface);
+        verify_device_id(&mut device)?;
+        let mut this = Self { device, config };
+        this.apply_config(config)?;
+        Ok(this)
+    }
+
+    /// Access the generated register API directly.
+    pub fn device(&mut self) -> &mut Lis2de12Device<SpiInterface<SPI>> {
+        &mut self.device
+    }
+
+    /// Consume the driver and return the underlying SPI bus.
+    pub fn destroy(self) -> SPI {
+        self.device.interface.spi
+    }
+}
+
+impl<IFACE> RawAccelerometer<I16x3> for Lis2de12<IFACE>
+where
+    IFACE: RegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error> + BufferInterface<AddressType = u8>,
+    <IFACE as RegisterInterface>::Error: Debug,
+{
+    type Error = <IFACE as RegisterInterface>::Error;
 
     fn accel_raw(&mut self) -> Result<I16x3, Error<Self::Error>> {
         self.read_raw()
@@ -694,70 +1008,59 @@ where
 
 /// Asynchronous LIS2DE12 driver.
 #[cfg(feature = "async")]
-pub struct Lis2de12Async<I2C> {
-    device: Lis2de12Device<DeviceInterfaceAsync<I2C>>,
+pub struct Lis2de12Async<IFACE> {
+    device: Lis2de12Device<IFACE>,
     config: Lis2de12Config,
 }
 
+/// Type alias for I2C-based async driver.
 #[cfg(feature = "async")]
-impl<I2C> Lis2de12Async<I2C>
+pub type Lis2de12I2cAsync<I2C> = Lis2de12Async<DeviceInterfaceAsync<I2C>>;
+
+/// Type alias for SPI-based async driver.
+#[cfg(feature = "async")]
+pub type Lis2de12SpiAsync<SPI> = Lis2de12Async<SpiInterfaceAsync<SPI>>;
+
+#[cfg(feature = "async")]
+// Generic implementation for all async interface types
+impl<IFACE> Lis2de12Async<IFACE>
 where
-    I2C: AsyncI2c,
-    I2C::Error: Debug,
+    IFACE: AsyncRegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error> + AsyncBufferInterface<AddressType = u8>,
+    <IFACE as AsyncRegisterInterface>::Error: Debug,
 {
-    /// Create a new async driver with the default configuration.
-    pub async fn new(i2c: I2C, addr: SlaveAddr) -> Result<Self, Error<I2C::Error>> {
-        Self::new_with_config(i2c, addr, Lis2de12Config::default()).await
-    }
-
-    /// Create a new async driver with an explicit configuration.
-    pub async fn new_with_config(i2c: I2C, addr: SlaveAddr, config: Lis2de12Config) -> Result<Self, Error<I2C::Error>> {
-        validate_config_common::<I2C::Error>(&config)?;
-
-        let interface = DeviceInterfaceAsync {
-            i2c,
-            address: addr.addr(),
-        };
-        let mut device = Lis2de12Device::new(interface);
-        verify_device_id_async(&mut device).await?;
-        let mut this = Self { device, config };
-        this.apply_config(config).await?;
-        Ok(this)
-    }
-
     /// Return the active configuration.
     pub const fn config(&self) -> Lis2de12Config {
         self.config
     }
 
     /// Update the sensor configuration asynchronously.
-    pub async fn set_config(&mut self, config: Lis2de12Config) -> Result<(), Error<I2C::Error>> {
-        validate_config_common::<I2C::Error>(&config)?;
+    pub async fn set_config(&mut self, config: Lis2de12Config) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        validate_config_common::<<IFACE as AsyncRegisterInterface>::Error>(&config)?;
         self.apply_config(config).await?;
         self.config = config;
         Ok(())
     }
 
     /// Read raw acceleration sample triplet asynchronously.
-    pub async fn read_raw(&mut self) -> Result<I16x3, Error<I2C::Error>> {
+    pub async fn read_raw(&mut self) -> Result<I16x3, Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let frame = self.read_fifo_frame().await?;
         Ok(decode_raw(&frame, self.config.mode))
     }
 
     /// Read acceleration expressed in milli-g asynchronously.
-    pub async fn read_mg(&mut self) -> Result<I16x3, Error<I2C::Error>> {
+    pub async fn read_mg(&mut self) -> Result<I16x3, Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let raw = self.read_raw().await?;
         Ok(scale_to_mg(raw, self.config.sensitivity_mg_per_lsb()))
     }
 
     /// Read acceleration expressed in g asynchronously.
-    pub async fn read_g(&mut self) -> Result<F32x3, Error<I2C::Error>> {
+    pub async fn read_g(&mut self) -> Result<F32x3, Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let raw = self.read_raw().await?;
         Ok(scale_to_g(raw, self.config.sensitivity_g_per_lsb()))
     }
 
     /// Read a single FIFO frame asynchronously.
-    pub async fn read_fifo_frame(&mut self) -> Result<FifoFrame, Error<I2C::Error>> {
+    pub async fn read_fifo_frame(&mut self) -> Result<FifoFrame, Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let mut buf: FifoFrame = [0; FIFO_FRAME_BYTES];
         let mut fifo = self.device.fifo_read_start();
         let mut offset = 0;
@@ -772,7 +1075,7 @@ where
     }
 
     /// Read multiple FIFO frames asynchronously, returning the number retrieved.
-    pub async fn read_fifo_frames(&mut self, frames: &mut [FifoFrame]) -> Result<usize, Error<I2C::Error>> {
+    pub async fn read_fifo_frames(&mut self, frames: &mut [FifoFrame]) -> Result<usize, Error<<IFACE as AsyncRegisterInterface>::Error>> {
         if frames.is_empty() {
             return Ok(0);
         }
@@ -790,7 +1093,7 @@ where
     }
 
     /// Drain all available FIFO frames asynchronously, discarding their contents.
-    pub async fn drain_fifo(&mut self) -> Result<usize, Error<I2C::Error>> {
+    pub async fn drain_fifo(&mut self) -> Result<usize, Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let mut drained = 0;
         loop {
             let status = self.fifo_status().await?;
@@ -804,20 +1107,20 @@ where
     }
 
     /// Read the FIFO source register asynchronously and return the parsed status snapshot.
-    pub async fn fifo_status(&mut self) -> Result<FifoStatus, Error<I2C::Error>> {
+    pub async fn fifo_status(&mut self) -> Result<FifoStatus, Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let status = self.device.fifo_src_reg().read_async().await.map_err(Error::from)?;
         Ok(FifoStatus::from(status))
     }
 
     /// Enable or disable the on-die temperature sensor asynchronously.
-    pub async fn set_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<I2C::Error>> {
+    pub async fn set_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.write_temperature_sensor(enable).await?;
         self.config.temperature_enable = enable;
         Ok(())
     }
 
     /// Issue a reboot command asynchronously.
-    pub async fn reboot(&mut self) -> Result<(), Error<I2C::Error>> {
+    pub async fn reboot(&mut self) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.device
             .ctrl_reg_5()
             .write_async(|reg: &mut field_sets::CtrlReg5| reg.set_boot(true))
@@ -825,17 +1128,7 @@ where
             .map_err(Error::from)
     }
 
-    /// Access the generated register API directly.
-    pub fn device(&mut self) -> &mut Lis2de12Device<DeviceInterfaceAsync<I2C>> {
-        &mut self.device
-    }
-
-    /// Consume the driver and return the underlying asynchronous I²C bus.
-    pub fn destroy(self) -> I2C {
-        self.device.interface.i2c
-    }
-
-    async fn write_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<I2C::Error>> {
+    async fn write_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.device
             .temp_cfg_reg()
             .write_async(|reg: &mut field_sets::TempCfgReg| {
@@ -845,7 +1138,7 @@ where
             .map_err(Error::from)
     }
 
-    async fn apply_config(&mut self, config: Lis2de12Config) -> Result<(), Error<I2C::Error>> {
+    async fn apply_config(&mut self, config: Lis2de12Config) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.device
             .ctrl_reg_1()
             .write_async(|reg: &mut field_sets::CtrlReg1| {
@@ -892,9 +1185,93 @@ where
     }
 }
 
-fn verify_device_id<I2C>(device: &mut Lis2de12Device<DeviceInterface<I2C>>) -> Result<(), Error<I2C::Error>>
+// I2C-specific async constructors and methods
+#[cfg(feature = "async")]
+impl<I2C> Lis2de12Async<DeviceInterfaceAsync<I2C>>
 where
-    I2C: I2c,
+    I2C: AsyncI2c,
+    I2C::Error: Debug,
+{
+    /// Create a new async I2C driver with the default configuration.
+    pub async fn new_i2c(i2c: I2C, addr: SlaveAddr) -> Result<Self, Error<I2C::Error>> {
+        Self::new_i2c_with_config(i2c, addr, Lis2de12Config::default()).await
+    }
+
+    /// Create a new async I2C driver with an explicit configuration.
+    pub async fn new_i2c_with_config(i2c: I2C, addr: SlaveAddr, config: Lis2de12Config) -> Result<Self, Error<I2C::Error>> {
+        validate_config_common::<I2C::Error>(&config)?;
+
+        let interface = DeviceInterfaceAsync {
+            i2c,
+            address: addr.addr(),
+        };
+        let mut device = Lis2de12Device::new(interface);
+        verify_device_id_async(&mut device).await?;
+        let mut this = Self { device, config };
+        this.apply_config(config).await?;
+        Ok(this)
+    }
+
+    /// Create a new async I2C driver with the default configuration (backward compatible).
+    pub async fn new(i2c: I2C, addr: SlaveAddr) -> Result<Self, Error<I2C::Error>> {
+        Self::new_i2c(i2c, addr).await
+    }
+
+    /// Create a new driver with an explicit configuration (backward compatible, uses I2C).
+    pub async fn new_with_config(i2c: I2C, addr: SlaveAddr, config: Lis2de12Config) -> Result<Self, Error<I2C::Error>> {
+        Self::new_i2c_with_config(i2c, addr, config).await
+    }
+
+    /// Access the generated register API directly.
+    pub fn device(&mut self) -> &mut Lis2de12Device<DeviceInterfaceAsync<I2C>> {
+        &mut self.device
+    }
+
+    /// Consume the driver and return the underlying asynchronous I²C bus.
+    pub fn destroy(self) -> I2C {
+        self.device.interface.i2c
+    }
+}
+
+// Async SPI-specific constructors and methods
+#[cfg(feature = "async")]
+impl<SPI> Lis2de12Async<SpiInterfaceAsync<SPI>>
+where
+    SPI: AsyncSpiDevice,
+    SPI::Error: Debug,
+{
+    /// Create a new asynchronous SPI driver with the default configuration.
+    pub async fn new_spi(spi: SPI) -> Result<Self, Error<SPI::Error>> {
+        Self::new_spi_with_config(spi, Lis2de12Config::default()).await
+    }
+
+    /// Create a new asynchronous SPI driver with an explicit configuration.
+    pub async fn new_spi_with_config(spi: SPI, config: Lis2de12Config) -> Result<Self, Error<SPI::Error>> {
+        validate_config_common::<SPI::Error>(&config)?;
+
+        let interface = SpiInterfaceAsync { spi };
+        let mut device = Lis2de12Device::new(interface);
+        verify_device_id_async(&mut device).await?;
+        let mut this = Self { device, config };
+        this.apply_config(config).await?;
+        Ok(this)
+    }
+
+    /// Access the generated register API directly.
+    pub fn device(&mut self) -> &mut Lis2de12Device<SpiInterfaceAsync<SPI>> {
+        &mut self.device
+    }
+
+    /// Consume the driver and return the underlying async SPI bus.
+    pub fn destroy(self) -> SPI {
+        self.device.interface.spi
+    }
+}
+
+fn verify_device_id<IFACE>(device: &mut Lis2de12Device<IFACE>) -> Result<(), Error<<IFACE as RegisterInterface>::Error>>
+where
+    IFACE: RegisterInterface<AddressType = u8>,
+    <IFACE as RegisterInterface>::Error: Debug,
 {
     let who = device.who_am_i().read().map_err(Error::from)?;
     if who != field_sets::WhoAmI::new() {
@@ -904,11 +1281,12 @@ where
 }
 
 #[cfg(feature = "async")]
-async fn verify_device_id_async<I2C>(
-    device: &mut Lis2de12Device<DeviceInterfaceAsync<I2C>>,
-) -> Result<(), Error<I2C::Error>>
+async fn verify_device_id_async<IFACE>(
+    device: &mut Lis2de12Device<IFACE>,
+) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>>
 where
-    I2C: AsyncI2c,
+    IFACE: AsyncRegisterInterface<AddressType = u8>,
+    <IFACE as AsyncRegisterInterface>::Error: Debug,
 {
     let who = device.who_am_i().read_async().await.map_err(Error::from)?;
     if who != field_sets::WhoAmI::new() {
