@@ -1,6 +1,6 @@
 [package]
 name = "lis2de12"
-version = "0.1.1"
+version = "0.1.2"
 description = "Blocking and async driver for the LIS2DE12 accelerometer with I2C and SPI support"
 edition = "2024"
 authors = ["Gerzain Mata <leftger@gmail.com>"]
