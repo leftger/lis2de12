@@ -35,6 +35,13 @@ OUT_TEMP_L:
   address: 0x0C
   size_bits: 8
   access: RO
+  fields:
+    TEMP_L:
+      base: uint
+      start: 0
+      end: 8
+      access: RO
+      description: Temperature low byte
 
 OUT_TEMP_H:
   type: register
@@ -42,6 +49,13 @@ OUT_TEMP_H:
   address: 0x0D
   size_bits: 8
   access: RO
+  fields:
+    TEMP_H:
+      base: uint
+      start: 0
+      end: 8
+      access: RO
+      description: Temperature high byte
 
 WHO_AM_I:
   type: register
@@ -85,12 +99,12 @@ TEMP_CFG_REG:
         11: Enabled
       try_conversion:
         name: TEMP_EN
-        TempEn:
-          value: 0b00
-          description: Temperature sensor enable
         TempDis:
+          value: 0b00
+          description: Temperature sensor disable
+        TempEn:
           value: 0b11
-          description: Temperature sensoe disable
+          description: Temperature sensor enable
 
 CTRL_REG1:
   type: register

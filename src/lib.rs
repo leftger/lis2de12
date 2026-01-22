@@ -91,6 +91,35 @@
 //! # }
 //! ```
 //!
+//! ## Temperature Sensor
+//!
+//! ```no_run
+//! use lis2de12::{Lis2de12, Lis2de12Config, SlaveAddr};
+//! # use embedded_hal::i2c::I2c;
+//! # fn example<I2C: I2c>(i2c: I2C) -> Result<(), lis2de12::Error<I2C::Error>>
+//! # where I2C::Error: core::fmt::Debug {
+//!
+//! // Enable temperature sensor in configuration
+//! let config = Lis2de12Config {
+//!     temperature_enable: true,
+//!     ..Default::default()
+//! };
+//!
+//! let mut sensor = Lis2de12::new_i2c_with_config(i2c, SlaveAddr::default(), config)?;
+//!
+//! // Or enable it after initialization
+//! sensor.set_temperature_sensor(true)?;
+//!
+//! // Read temperature change in °C (relative to power-on reference)
+//! // Positive = warmer, negative = cooler
+//! let temp_delta = sensor.read_temperature()?;
+//!
+//! // Or read raw 16-bit left-justified value
+//! let temp_raw = sensor.read_temperature_raw()?;
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! # SPI Mode
 //!
 //! The LIS2DE12 requires SPI Mode 0 or Mode 3 (CPOL=0, CPHA=0 or CPOL=1, CPHA=1).
@@ -853,6 +882,32 @@ where
         Ok(())
     }
 
+    /// Read raw temperature sensor data as a 16-bit signed integer.
+    /// The temperature sensor must be enabled via `set_temperature_sensor` or configuration.
+    /// Returns the raw left-justified two's complement value.
+    pub fn read_temperature_raw(&mut self) -> Result<i16, Error<<IFACE as RegisterInterface>::Error>> {
+        let low = self.device.out_temp_l().read().map_err(Error::from)?.temp_l() as u8;
+        let high = self.device.out_temp_h().read().map_err(Error::from)?.temp_h() as u8;
+        Ok(i16::from_le_bytes([low, high]))
+    }
+
+    /// Read temperature change in degrees Celsius.
+    /// The temperature sensor must be enabled via `set_temperature_sensor` or configuration.
+    ///
+    /// Returns the temperature relative to the device's reference point (typically power-on temperature).
+    /// The sensitivity is 1 digit/°C with 8-bit resolution (left-justified in 16-bit register).
+    /// Positive values indicate temperature increase, negative values indicate decrease.
+    ///
+    /// Note: This sensor measures temperature **change**, not absolute temperature.
+    /// For absolute temperature measurements, calibration against a known reference is required.
+    pub fn read_temperature(&mut self) -> Result<f32, Error<<IFACE as RegisterInterface>::Error>> {
+        let raw = self.read_temperature_raw()?;
+        // Data is 8-bit resolution, left-justified in 16-bit register
+        // Sensitivity: 1 digit/°C (see datasheet Table 5)
+        // Convert from left-justified 16-bit to signed 8-bit value
+        Ok((raw >> 8) as f32)
+    }
+
     /// Issue a reboot command to reload memory content.
     pub fn reboot(&mut self) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.device
@@ -1117,6 +1172,32 @@ where
         self.write_temperature_sensor(enable).await?;
         self.config.temperature_enable = enable;
         Ok(())
+    }
+
+    /// Read raw temperature sensor data as a 16-bit signed integer asynchronously.
+    /// The temperature sensor must be enabled via `set_temperature_sensor` or configuration.
+    /// Returns the raw left-justified two's complement value.
+    pub async fn read_temperature_raw(&mut self) -> Result<i16, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        let low = self.device.out_temp_l().read_async().await.map_err(Error::from)?.temp_l() as u8;
+        let high = self.device.out_temp_h().read_async().await.map_err(Error::from)?.temp_h() as u8;
+        Ok(i16::from_le_bytes([low, high]))
+    }
+
+    /// Read temperature change in degrees Celsius asynchronously.
+    /// The temperature sensor must be enabled via `set_temperature_sensor` or configuration.
+    ///
+    /// Returns the temperature relative to the device's reference point (typically power-on temperature).
+    /// The sensitivity is 1 digit/°C with 8-bit resolution (left-justified in 16-bit register).
+    /// Positive values indicate temperature increase, negative values indicate decrease.
+    ///
+    /// Note: This sensor measures temperature **change**, not absolute temperature.
+    /// For absolute temperature measurements, calibration against a known reference is required.
+    pub async fn read_temperature(&mut self) -> Result<f32, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        let raw = self.read_temperature_raw().await?;
+        // Data is 8-bit resolution, left-justified in 16-bit register
+        // Sensitivity: 1 digit/°C (see datasheet Table 5)
+        // Convert from left-justified 16-bit to signed 8-bit value
+        Ok((raw >> 8) as f32)
     }
 
     /// Issue a reboot command asynchronously.
