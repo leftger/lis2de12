@@ -817,31 +817,31 @@ CLICK_SRC:
   fields:
     IA:
       base: bool
-      start: 5
+      start: 6
       description: Click interrupt active
     DClick:
       base: bool
-      start: 4
+      start: 5
       description: Double-click detect
     SClick:
       base: bool
-      start: 3
+      start: 4
       description: Single-click detect
     Sign:
       base: bool
-      start: 2
+      start: 3
       description: Click sign
     Z:
       base: bool
-      start: 1
+      start: 2
       description: Z click event
     Y:
       base: bool
-      start: 0
+      start: 1
       description: Y click event
     X:
       base: bool
-      start: 7
+      start: 0
       description: X click event
 
 CLICK_THS:
