@@ -997,25 +997,25 @@ impl FifoConfig {
     }
 }
 
-/// Sensor operating mode controlling resolution and power consumption.
+/// Sensor operating mode.
+///
+/// The LIS2DE12 is an 8-bit-only device: the LPen bit in CTRL_REG1 must always be set to '1'
+/// per the datasheet ("must be set to '1' for the correct operation of the device"). There is no
+/// 10-bit normal mode. Both variants behave identically; `Normal` is kept only for API
+/// compatibility and is deprecated.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum OperatingMode {
-    /// Normal mode (10-bit resolution).
+    /// Deprecated — LIS2DE12 does not support 10-bit mode. Use `LowPower` instead.
+    #[deprecated(note = "LIS2DE12 is always 8-bit; LPen must always be 1. Use LowPower instead.")]
     Normal,
-    /// Low-power mode (8-bit resolution).
+    /// 8-bit low-power mode (the only valid mode for LIS2DE12).
     LowPower,
 }
 
 impl OperatingMode {
-    const fn resolution_bits(self) -> u8 {
-        match self {
-            OperatingMode::Normal => 10,
-            OperatingMode::LowPower => 8,
-        }
-    }
-
     const fn lpen(self) -> bool {
-        matches!(self, OperatingMode::LowPower)
+        // LPen must always be '1' per datasheet Table 29.
+        true
     }
 }
 
@@ -1071,7 +1071,7 @@ impl Default for Lis2de12Config {
     fn default() -> Self {
         Self {
             odr: Odr::HundredHz,
-            mode: OperatingMode::Normal,
+            mode: OperatingMode::LowPower,
             scale: Fs::PlusMinus2G,
             axes: AxesEnable::default(),
             block_data_update: true,
@@ -1082,19 +1082,15 @@ impl Default for Lis2de12Config {
 }
 
 impl Lis2de12Config {
-    fn resolution_bits(self) -> u8 {
-        self.mode.resolution_bits()
-    }
-
     fn sensitivity_g_per_lsb(self) -> f32 {
-        let full_scale_g = match self.scale {
-            Fs::PlusMinus2G => 2.0,
-            Fs::PlusMinus4G => 4.0,
-            Fs::PlusMinus8G => 8.0,
-            Fs::PlusMinus16G => 16.0,
-        };
-        let denom = 1u32 << (self.resolution_bits() - 1);
-        full_scale_g / denom as f32
+        // Exact values from datasheet Table 4 (mg/digit → g/digit).
+        // ±16g does not follow the simple linear pattern; it uses 187.5 mg/digit.
+        match self.scale {
+            Fs::PlusMinus2G => 0.0156,
+            Fs::PlusMinus4G => 0.0312,
+            Fs::PlusMinus8G => 0.0625,
+            Fs::PlusMinus16G => 0.1875,
+        }
     }
 
     fn sensitivity_mg_per_lsb(self) -> f32 {
@@ -1494,18 +1490,22 @@ where
 }
 
 /// Available LIS2DE12 I²C slave addresses (controlled by the SA0 pin).
+///
+/// These are 7-bit addresses as required by `embedded-hal` I²C traits. The datasheet Table 15
+/// lists 8-bit SAD+R/W bytes (0x30/0x32 write, 0x31/0x33 read); strip the R/W bit to get the
+/// 7-bit address used here.
 pub enum SlaveAddr {
-    /// SA0 pulled low (`0x31`).
+    /// SA0 pulled low (7-bit address `0x18`).
     Default,
-    /// SA0 pulled high (`0x33`).
+    /// SA0 pulled high (7-bit address `0x19`).
     Alternative,
 }
 
 impl SlaveAddr {
     const fn addr(self) -> u8 {
         match self {
-            SlaveAddr::Default => 0x31,
-            SlaveAddr::Alternative => 0x33,
+            SlaveAddr::Default => 0x18,
+            SlaveAddr::Alternative => 0x19,
         }
     }
 }
@@ -2739,15 +2739,14 @@ where
     Ok(())
 }
 
-fn decode_raw(bytes: &FifoFrame, mode: OperatingMode) -> I16x3 {
+fn decode_raw(bytes: &FifoFrame, _mode: OperatingMode) -> I16x3 {
+    // FIFO frame layout: [FIFO_READ_START(0x00), OUT_X_H, reserved, OUT_Y_H, reserved, OUT_Z_H].
+    // The LIS2DE12 is always 8-bit; signed axis data sits in bytes[1], [3], [5].
+    // Construct i16 from [0, H_byte] then arithmetic-right-shift by 8 to sign-extend.
     let x = i16::from_le_bytes([bytes[0], bytes[1]]);
     let y = i16::from_le_bytes([bytes[2], bytes[3]]);
     let z = i16::from_le_bytes([bytes[4], bytes[5]]);
-    let shift = match mode {
-        OperatingMode::Normal => 6,
-        OperatingMode::LowPower => 8,
-    };
-    I16x3::new(x >> shift, y >> shift, z >> shift)
+    I16x3::new(x >> 8, y >> 8, z >> 8)
 }
 
 fn scale_to_mg(raw: I16x3, mg_per_lsb: f32) -> I16x3 {
@@ -2840,13 +2839,21 @@ mod tests {
     }
 
     #[test]
-    fn decode_raw_respects_operating_mode_shift() {
-        let frame: FifoFrame = [0x40, 0x00, 0x80, 0x00, 0xC0, 0x00];
-        let decoded = decode_raw(&frame, OperatingMode::Normal);
-
+    fn decode_raw_extracts_h_byte_with_sign_extension() {
+        // FIFO frame: [pad, OUT_X_H, pad, OUT_Y_H, pad, OUT_Z_H]
+        // Positive values: H-byte in odd positions, even positions are placeholders.
+        let frame: FifoFrame = [0x00, 0x01, 0x00, 0x02, 0x00, 0x03];
+        let decoded = decode_raw(&frame, OperatingMode::LowPower);
         assert_eq!(decoded.x, 1);
         assert_eq!(decoded.y, 2);
         assert_eq!(decoded.z, 3);
+
+        // Negative value: 0xFF in the H-byte position should decode to -1.
+        let frame_neg: FifoFrame = [0x00, 0xFF, 0x00, 0xFE, 0x00, 0x80];
+        let decoded_neg = decode_raw(&frame_neg, OperatingMode::LowPower);
+        assert_eq!(decoded_neg.x, -1);
+        assert_eq!(decoded_neg.y, -2);
+        assert_eq!(decoded_neg.z, -128);
     }
 
     #[test]

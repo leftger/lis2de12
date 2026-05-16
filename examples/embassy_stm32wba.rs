@@ -81,7 +81,7 @@ async fn main(_spawner: Spawner) -> ! {
     let mut sensor_cfg = Lis2de12Config::default();
     sensor_cfg.odr = Odr::HundredHz;
     sensor_cfg.scale = Fs::PlusMinus4G;
-    sensor_cfg.mode = OperatingMode::Normal;
+    sensor_cfg.mode = OperatingMode::LowPower;
     sensor_cfg.axes = AxesEnable::default();
     sensor_cfg.fifo = FifoConfig::enabled(FifoMode::Stream).with_watermark(6);
 

@@ -157,9 +157,10 @@ CTRL_REG1:
       start: 3
       access: RW
       description: |
-        Low-power enable
-        0: Normal mode
-        1: Low-power mode
+        Low-power enable. Must always be set to '1' for correct LIS2DE12 operation
+        (datasheet Table 29). The LIS2DE12 does not support 10-bit normal mode.
+        0: reserved (do not use)
+        1: Low-power mode (8-bit) — required
     ZEN:
       base: bool
       start: 2
@@ -460,13 +461,6 @@ FIFO_READ_START:
   type: buffer
   description: FIFO read start
   address: 0x28
-  access: RO
-
-OUT_X_L:
-  type: register
-  description: X-axis acceleration data (LSB)
-  address: 0x28
-  size_bits: 8
   access: RO
 
 OUT_X_H:
