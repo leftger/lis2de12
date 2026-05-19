@@ -220,10 +220,13 @@ pub enum InterruptPolarity {
 /// Latch mode for interrupt signals.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub enum LatchMode {
-    /// Interrupt signal is not latched.
+    /// Interrupt signal is not latched: the pin stays high only for the duration of the
+    /// latency window, then clears automatically regardless of whether the source register
+    /// has been read.
     #[default]
     NonLatched,
-    /// Interrupt signal is latched until source register is read.
+    /// Interrupt signal is latched: the pin stays high until the interrupt source register
+    /// (`INT1_SRC`, `INT2_SRC`, or `CLICK_SRC`) is read, which also clears the flag.
     Latched,
 }
 
@@ -328,7 +331,8 @@ pub struct MotionConfig {
     pub mode: MotionDetectionMode,
     /// Per-axis event enables.
     pub axes: MotionAxesConfig,
-    /// Threshold value (0-127, `LSb` depends on full-scale).
+    /// Threshold value (0-127). LSb weight per full-scale setting:
+    /// 16 mg @ ±2 g | 32 mg @ ±4 g | 62 mg @ ±8 g | 186 mg @ ±16 g.
     pub threshold: u8,
     /// Duration value (0-127, `LSb` = 1/ODR).
     pub duration: u8,
@@ -507,7 +511,8 @@ pub struct ClickConfig {
     pub enable: bool,
     /// Per-axis click event enables.
     pub axes: ClickAxesConfig,
-    /// Click threshold (0-127, `LSb` depends on full-scale).
+    /// Click threshold (0-127). 1 LSb = full_scale / 128, so:
+    /// 15.6 mg @ ±2 g | 31.2 mg @ ±4 g | 62.5 mg @ ±8 g | 187.5 mg @ ±16 g.
     pub threshold: u8,
     /// Time limit for click detection (0-127, `LSb` = 1/ODR).
     pub time_limit: u8,
@@ -614,9 +619,11 @@ impl ClickConfig {
 pub struct ActivityConfig {
     /// Enable activity detection.
     pub enable: bool,
-    /// Activation threshold (0-127).
+    /// Activation threshold (0-127). LSb weight per full-scale setting:
+    /// 16 mg @ ±2 g | 32 mg @ ±4 g | 62 mg @ ±8 g | 186 mg @ ±16 g.
     pub threshold: u8,
-    /// Duration before sleep (0-255).
+    /// Minimum inactivity duration before entering sleep mode (0-255).
+    /// Actual time = (8 × value + 1) / ODR. At 100 Hz, value=99 → ~8 s.
     pub duration: u8,
 }
 

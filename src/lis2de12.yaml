@@ -192,18 +192,28 @@ CTRL_REG2:
         High-pass filter mode selection
       conversion:
         name: HPM
-        NormalMode:
+        NormalWithReset:
           value: 0b00
-          description: Normal mode
+          description: >-
+            Normal mode (reset by reading REFERENCE register). Filter
+            accumulator is reset on each read of the reference, removing
+            DC component from the output.
         ReferenceSignal:
           value: 0b01
-          description: Reference signal for filtering
-        NormalMode2:
+          description: >-
+            Reference mode. The value in the REFERENCE register is used
+            as the reference for high-pass filtering; output reflects
+            acceleration relative to that reference.
+        Normal:
           value: 0b10
-          description: Normal mode
-        Autoreset:
+          description: >-
+            Normal mode. Same as NormalWithReset but accumulator is not
+            reset on REFERENCE register reads.
+        AutoresetOnInt:
           value: 0b11
-          description: Autoreset on interrupt event
+          description: >-
+            Autoreset on interrupt event. Filter is automatically reset
+            when an interrupt is generated.
     HPCF:
       base: uint
       start: 4
@@ -427,7 +437,9 @@ REFERENCE:
       start: 0
       end: 8
       access: RW
-      description: Reference value
+      description: >-
+        Reference value for high-pass filter interrupt generation.
+        LSb weight per full-scale: ~16 @ ±2 g | ~31 @ ±4 g | ~63 @ ±8 g | ~127 @ ±16 g.
 
 STATUS_REG:
   type: register
