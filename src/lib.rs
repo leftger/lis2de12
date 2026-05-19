@@ -230,6 +230,18 @@ pub enum LatchMode {
     Latched,
 }
 
+/// Returns `(aoi, sixd, d4d)` register bits for a given motion detection mode.
+fn mode_bits(mode: MotionDetectionMode) -> (bool, bool, bool) {
+    match mode {
+        MotionDetectionMode::OrCombination => (false, false, false),
+        MotionDetectionMode::AndCombination => (true, false, false),
+        MotionDetectionMode::SixDirection => (false, true, false),
+        MotionDetectionMode::SixDirectionPosition => (true, true, false),
+        MotionDetectionMode::FourDirection => (false, true, true),
+        MotionDetectionMode::FourDirectionPosition => (true, true, true),
+    }
+}
+
 /// Motion detection mode determining how axis events are combined.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub enum MotionDetectionMode {
@@ -238,10 +250,16 @@ pub enum MotionDetectionMode {
     OrCombination,
     /// AND combination of enabled axis events.
     AndCombination,
-    /// 6-direction movement detection.
+    /// 6-direction movement detection (all axes).
     SixDirection,
-    /// 6-direction position detection.
+    /// 6-direction position detection (all axes).
     SixDirectionPosition,
+    /// 4-direction movement detection (X/Y only; Z ignored).
+    /// Sets D4D_INTx in CTRL_REG5 alongside the SIXD bit.
+    FourDirection,
+    /// 4-direction position detection (X/Y only; Z ignored).
+    /// Sets D4D_INTx in CTRL_REG5 alongside the SIXD bit.
+    FourDirectionPosition,
 }
 
 /// Per-axis motion event enables for high/low thresholds.
@@ -1669,6 +1687,36 @@ where
         Ok((raw >> 8) as f32)
     }
 
+    /// Route HP-filtered data to the output registers and FIFO (FDS bit in CTRL_REG2).
+    /// When enabled, accelerometer output values reflect the high-pass filtered signal
+    /// rather than the raw signal.
+    pub fn set_high_pass_to_outputs(&mut self, enable: bool) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+        self.device
+            .ctrl_reg_2()
+            .modify(|reg: &mut field_sets::CtrlReg2| reg.set_fds(enable))
+            .map_err(Error::from)
+    }
+
+    /// Return `true` if HP-filtered data is currently routed to the output registers.
+    pub fn high_pass_to_outputs(&mut self) -> Result<bool, Error<<IFACE as RegisterInterface>::Error>> {
+        Ok(self.device.ctrl_reg_2().read().map_err(Error::from)?.fds())
+    }
+
+    /// Connect (`true`) or disconnect (`false`) the internal SDO/SA0 pull-up resistor.
+    /// The pull-up is connected by default. Disconnect it to reduce power draw or to
+    /// avoid bus conflicts when the pin is driven externally.
+    pub fn set_sdo_pullup_connected(&mut self, connected: bool) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+        self.device
+            .ctrl_reg_0()
+            .modify(|reg: &mut field_sets::CtrlReg0| reg.set_sdo_pu_disc(!connected))
+            .map_err(Error::from)
+    }
+
+    /// Return `true` if the internal SDO/SA0 pull-up resistor is connected.
+    pub fn sdo_pullup_connected(&mut self) -> Result<bool, Error<<IFACE as RegisterInterface>::Error>> {
+        Ok(!self.device.ctrl_reg_0().read().map_err(Error::from)?.sdo_pu_disc())
+    }
+
     /// Issue a reboot command to reload memory content.
     pub fn reboot(&mut self) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.device
@@ -1809,16 +1857,11 @@ where
     }
 
     fn write_motion_config_int1(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
-        // Configure INT1_CFG
+        let (aoi, sixd, d4d) = mode_bits(config.mode);
+
         self.device
             .int_1_cfg()
             .write(|reg: &mut field_sets::Int1Cfg| {
-                let (aoi, sixd) = match config.mode {
-                    MotionDetectionMode::OrCombination => (false, false),
-                    MotionDetectionMode::AndCombination => (true, false),
-                    MotionDetectionMode::SixDirection => (false, true),
-                    MotionDetectionMode::SixDirectionPosition => (true, true),
-                };
                 reg.set_aoi(aoi);
                 reg.set_sixd(sixd);
                 reg.set_xhie(config.axes.x_high && config.enable);
@@ -1830,7 +1873,6 @@ where
             })
             .map_err(Error::from)?;
 
-        // Configure threshold
         self.device
             .int_1_ths()
             .write(|reg: &mut field_sets::Int1Ths| {
@@ -1838,7 +1880,6 @@ where
             })
             .map_err(Error::from)?;
 
-        // Configure duration
         self.device
             .int_1_duration()
             .write(|reg: &mut field_sets::Int1Duration| {
@@ -1846,15 +1887,14 @@ where
             })
             .map_err(Error::from)?;
 
-        // Configure latch in CTRL_REG5
         self.device
             .ctrl_reg_5()
             .modify(|reg: &mut field_sets::CtrlReg5| {
                 reg.set_lir_int_1(matches!(config.latch, LatchMode::Latched));
+                reg.set_d_4_d_int_1(d4d);
             })
             .map_err(Error::from)?;
 
-        // Configure high-pass filter in CTRL_REG2
         self.device
             .ctrl_reg_2()
             .modify(|reg: &mut field_sets::CtrlReg2| {
@@ -1866,16 +1906,11 @@ where
     }
 
     fn write_motion_config_int2(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
-        // Configure INT2_CFG
+        let (aoi, sixd, d4d) = mode_bits(config.mode);
+
         self.device
             .int_2_cfg()
             .write(|reg: &mut field_sets::Int2Cfg| {
-                let (aoi, sixd) = match config.mode {
-                    MotionDetectionMode::OrCombination => (false, false),
-                    MotionDetectionMode::AndCombination => (true, false),
-                    MotionDetectionMode::SixDirection => (false, true),
-                    MotionDetectionMode::SixDirectionPosition => (true, true),
-                };
                 reg.set_aoi(aoi);
                 reg.set_sixd(sixd);
                 reg.set_xhie(config.axes.x_high && config.enable);
@@ -1887,7 +1922,6 @@ where
             })
             .map_err(Error::from)?;
 
-        // Configure threshold
         self.device
             .int_2_ths()
             .write(|reg: &mut field_sets::Int2Ths| {
@@ -1895,7 +1929,6 @@ where
             })
             .map_err(Error::from)?;
 
-        // Configure duration
         self.device
             .int_2_duration()
             .write(|reg: &mut field_sets::Int2Duration| {
@@ -1903,15 +1936,14 @@ where
             })
             .map_err(Error::from)?;
 
-        // Configure latch in CTRL_REG5
         self.device
             .ctrl_reg_5()
             .modify(|reg: &mut field_sets::CtrlReg5| {
                 reg.set_lir_int_2(matches!(config.latch, LatchMode::Latched));
+                reg.set_d_4_d_int_2(d4d);
             })
             .map_err(Error::from)?;
 
-        // Configure high-pass filter in CTRL_REG2
         self.device
             .ctrl_reg_2()
             .modify(|reg: &mut field_sets::CtrlReg2| {
@@ -2279,6 +2311,34 @@ where
         Ok((raw >> 8) as f32)
     }
 
+    /// Route HP-filtered data to the output registers and FIFO asynchronously.
+    pub async fn set_high_pass_to_outputs(&mut self, enable: bool) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        self.device
+            .ctrl_reg_2()
+            .modify_async(|reg: &mut field_sets::CtrlReg2| reg.set_fds(enable))
+            .await
+            .map_err(Error::from)
+    }
+
+    /// Return `true` if HP-filtered data is currently routed to the output registers.
+    pub async fn high_pass_to_outputs(&mut self) -> Result<bool, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        Ok(self.device.ctrl_reg_2().read_async().await.map_err(Error::from)?.fds())
+    }
+
+    /// Connect (`true`) or disconnect (`false`) the internal SDO/SA0 pull-up resistor asynchronously.
+    pub async fn set_sdo_pullup_connected(&mut self, connected: bool) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        self.device
+            .ctrl_reg_0()
+            .modify_async(|reg: &mut field_sets::CtrlReg0| reg.set_sdo_pu_disc(!connected))
+            .await
+            .map_err(Error::from)
+    }
+
+    /// Return `true` if the internal SDO/SA0 pull-up resistor is connected.
+    pub async fn sdo_pullup_connected(&mut self) -> Result<bool, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        Ok(!self.device.ctrl_reg_0().read_async().await.map_err(Error::from)?.sdo_pu_disc())
+    }
+
     /// Issue a reboot command asynchronously.
     pub async fn reboot(&mut self) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.device
@@ -2426,16 +2486,11 @@ where
     }
 
     async fn write_motion_config_int1(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
-        // Configure INT1_CFG
+        let (aoi, sixd, d4d) = mode_bits(config.mode);
+
         self.device
             .int_1_cfg()
             .write_async(|reg: &mut field_sets::Int1Cfg| {
-                let (aoi, sixd) = match config.mode {
-                    MotionDetectionMode::OrCombination => (false, false),
-                    MotionDetectionMode::AndCombination => (true, false),
-                    MotionDetectionMode::SixDirection => (false, true),
-                    MotionDetectionMode::SixDirectionPosition => (true, true),
-                };
                 reg.set_aoi(aoi);
                 reg.set_sixd(sixd);
                 reg.set_xhie(config.axes.x_high && config.enable);
@@ -2448,7 +2503,6 @@ where
             .await
             .map_err(Error::from)?;
 
-        // Configure threshold
         self.device
             .int_1_ths()
             .write_async(|reg: &mut field_sets::Int1Ths| {
@@ -2457,7 +2511,6 @@ where
             .await
             .map_err(Error::from)?;
 
-        // Configure duration
         self.device
             .int_1_duration()
             .write_async(|reg: &mut field_sets::Int1Duration| {
@@ -2466,16 +2519,15 @@ where
             .await
             .map_err(Error::from)?;
 
-        // Configure latch in CTRL_REG5
         self.device
             .ctrl_reg_5()
             .modify_async(|reg: &mut field_sets::CtrlReg5| {
                 reg.set_lir_int_1(matches!(config.latch, LatchMode::Latched));
+                reg.set_d_4_d_int_1(d4d);
             })
             .await
             .map_err(Error::from)?;
 
-        // Configure high-pass filter in CTRL_REG2
         self.device
             .ctrl_reg_2()
             .modify_async(|reg: &mut field_sets::CtrlReg2| {
@@ -2488,16 +2540,11 @@ where
     }
 
     async fn write_motion_config_int2(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
-        // Configure INT2_CFG
+        let (aoi, sixd, d4d) = mode_bits(config.mode);
+
         self.device
             .int_2_cfg()
             .write_async(|reg: &mut field_sets::Int2Cfg| {
-                let (aoi, sixd) = match config.mode {
-                    MotionDetectionMode::OrCombination => (false, false),
-                    MotionDetectionMode::AndCombination => (true, false),
-                    MotionDetectionMode::SixDirection => (false, true),
-                    MotionDetectionMode::SixDirectionPosition => (true, true),
-                };
                 reg.set_aoi(aoi);
                 reg.set_sixd(sixd);
                 reg.set_xhie(config.axes.x_high && config.enable);
@@ -2528,16 +2575,15 @@ where
             .await
             .map_err(Error::from)?;
 
-        // Configure latch in CTRL_REG5
         self.device
             .ctrl_reg_5()
             .modify_async(|reg: &mut field_sets::CtrlReg5| {
                 reg.set_lir_int_2(matches!(config.latch, LatchMode::Latched));
+                reg.set_d_4_d_int_2(d4d);
             })
             .await
             .map_err(Error::from)?;
 
-        // Configure high-pass filter in CTRL_REG2
         self.device
             .ctrl_reg_2()
             .modify_async(|reg: &mut field_sets::CtrlReg2| {
