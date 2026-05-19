@@ -214,16 +214,28 @@ CTRL_REG2:
         name: HPCF
         TwoPercent:
           value: 0b00
-          description: Two percent of sampling rate
+          description: >-
+            ~2% of ODR (aggressive). Cutoff Hz by ODR:
+            1Hz→0.02, 10Hz→0.2, 25Hz→0.5, 50Hz→1, 100Hz→2,
+            200Hz→4, 400Hz→8, 1.6kHz→32, 5kHz→100
         OnePercent:
           value: 0b01
-          description: One percent of sampling rate
+          description: >-
+            ~1% of ODR (strong). Cutoff Hz by ODR:
+            1Hz→0.008, 10Hz→0.08, 25Hz→0.2, 50Hz→0.5, 100Hz→1,
+            200Hz→2, 400Hz→4, 1.6kHz→16, 5kHz→50
         HalfPercent:
           value: 0b10
-          description: Half percent of sampling rate
+          description: >-
+            ~0.5% of ODR (medium). Cutoff Hz by ODR:
+            1Hz→0.004, 10Hz→0.04, 25Hz→0.1, 50Hz→0.2, 100Hz→0.5,
+            200Hz→1, 400Hz→2, 1.6kHz→8, 5kHz→25
         FifthPercent:
           value: 0b11
-          description: Fifth of a percent of sampling rate
+          description: >-
+            ~0.2% of ODR (light). Cutoff Hz by ODR:
+            1Hz→0.002, 10Hz→0.02, 25Hz→0.05, 50Hz→0.1, 100Hz→0.2,
+            200Hz→0.5, 400Hz→1, 1.6kHz→4, 5kHz→12
     FDS:
       base: bool
       start: 3
