@@ -1632,12 +1632,28 @@ where
     /// Read temperature change in degrees Celsius.
     /// The temperature sensor must be enabled via `set_temperature_sensor` or configuration.
     ///
-    /// Returns the temperature relative to the device's reference point (typically power-on temperature).
-    /// The sensitivity is 1 digit/°C with 8-bit resolution (left-justified in 16-bit register).
-    /// Positive values indicate temperature increase, negative values indicate decrease.
+    /// Returns the temperature **delta** relative to the device's internal reference point
+    /// (established at power-on). The sensitivity is 1 digit/°C with 8-bit resolution
+    /// (left-justified in a 16-bit register). Positive values indicate temperature increase,
+    /// negative values indicate decrease.
     ///
-    /// Note: This sensor measures temperature **change**, not absolute temperature.
-    /// For absolute temperature measurements, calibration against a known reference is required.
+    /// # Relative vs. absolute temperature
+    ///
+    /// The LIS2DE12 temperature sensor measures **change**, not absolute temperature. ST's
+    /// reference C driver (`lis2de12_from_lsb_to_celsius`) adds a fixed 25 °C offset to the
+    /// raw value, implicitly assuming the device powers on at room temperature. That assumption
+    /// is unreliable in practice: if the device boots at a different ambient temperature the
+    /// offset will be wrong by exactly that difference.
+    ///
+    /// This driver returns the raw delta so callers can apply their own reference. To approximate
+    /// absolute temperature using the ST convention:
+    ///
+    /// ```ignore
+    /// let abs_celsius = sensor.read_temperature()? + 25.0;
+    /// ```
+    ///
+    /// For accurate absolute readings, record a known ambient temperature at boot and add it
+    /// instead of the 25 °C constant.
     pub fn read_temperature(&mut self) -> Result<f32, Error<<IFACE as RegisterInterface>::Error>> {
         let raw = self.read_temperature_raw()?;
         // Data is 8-bit resolution, left-justified in 16-bit register
@@ -2226,12 +2242,28 @@ where
     /// Read temperature change in degrees Celsius asynchronously.
     /// The temperature sensor must be enabled via `set_temperature_sensor` or configuration.
     ///
-    /// Returns the temperature relative to the device's reference point (typically power-on temperature).
-    /// The sensitivity is 1 digit/°C with 8-bit resolution (left-justified in 16-bit register).
-    /// Positive values indicate temperature increase, negative values indicate decrease.
+    /// Returns the temperature **delta** relative to the device's internal reference point
+    /// (established at power-on). The sensitivity is 1 digit/°C with 8-bit resolution
+    /// (left-justified in a 16-bit register). Positive values indicate temperature increase,
+    /// negative values indicate decrease.
     ///
-    /// Note: This sensor measures temperature **change**, not absolute temperature.
-    /// For absolute temperature measurements, calibration against a known reference is required.
+    /// # Relative vs. absolute temperature
+    ///
+    /// The LIS2DE12 temperature sensor measures **change**, not absolute temperature. ST's
+    /// reference C driver (`lis2de12_from_lsb_to_celsius`) adds a fixed 25 °C offset to the
+    /// raw value, implicitly assuming the device powers on at room temperature. That assumption
+    /// is unreliable in practice: if the device boots at a different ambient temperature the
+    /// offset will be wrong by exactly that difference.
+    ///
+    /// This driver returns the raw delta so callers can apply their own reference. To approximate
+    /// absolute temperature using the ST convention:
+    ///
+    /// ```ignore
+    /// let abs_celsius = sensor.read_temperature().await? + 25.0;
+    /// ```
+    ///
+    /// For accurate absolute readings, record a known ambient temperature at boot and add it
+    /// instead of the 25 °C constant.
     pub async fn read_temperature(&mut self) -> Result<f32, Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let raw = self.read_temperature_raw().await?;
         // Data is 8-bit resolution, left-justified in 16-bit register
