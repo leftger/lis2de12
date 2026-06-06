@@ -134,7 +134,7 @@ use core::cmp;
 use core::fmt::Debug;
 
 use accelerometer::vector::{F32x3, I16x3};
-use accelerometer::{Error, ErrorKind, RawAccelerometer};
+use accelerometer::{Accelerometer, Error, ErrorKind, RawAccelerometer};
 #[cfg(feature = "async")]
 use device_driver::{AsyncBufferInterface, AsyncRegisterInterface};
 use device_driver::{BufferInterface, BufferInterfaceError, RegisterInterface};
@@ -1120,6 +1120,21 @@ impl Lis2de12Config {
 
     fn sensitivity_mg_per_lsb(self) -> f32 {
         self.sensitivity_g_per_lsb() * 1000.0
+    }
+}
+
+fn odr_to_hz(odr: Odr) -> Option<f32> {
+    match odr {
+        Odr::PowerDown => None,
+        Odr::OneHz => Some(1.0),
+        Odr::TenHz => Some(10.0),
+        Odr::TwentyFiveHz => Some(25.0),
+        Odr::FiftyHz => Some(50.0),
+        Odr::HundredHz => Some(100.0),
+        Odr::TwoHundredHz => Some(200.0),
+        Odr::FourHundredHz => Some(400.0),
+        Odr::SixteenTwentyHz => Some(1620.0),
+        Odr::FiveThousandHz => Some(5376.0),
     }
 }
 
@@ -2156,6 +2171,22 @@ where
     }
 }
 
+impl<IFACE> Accelerometer for Lis2de12<IFACE>
+where
+    IFACE: RegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error> + BufferInterface<AddressType = u8>,
+    <IFACE as RegisterInterface>::Error: Debug,
+{
+    type Error = <IFACE as RegisterInterface>::Error;
+
+    fn accel_norm(&mut self) -> Result<F32x3, Error<Self::Error>> {
+        self.read_g()
+    }
+
+    fn sample_rate(&mut self) -> Result<f32, Error<Self::Error>> {
+        odr_to_hz(self.config.odr).ok_or_else(|| Error::new(ErrorKind::Mode))
+    }
+}
+
 /// Asynchronous LIS2DE12 driver.
 #[cfg(feature = "async")]
 pub struct Lis2de12Async<IFACE> {
@@ -2959,6 +2990,24 @@ mod tests {
         assert!((scaled.x - 1.0).abs() <= EPSILON);
         assert!((scaled.y + 2.0).abs() <= EPSILON);
         assert!(scaled.z.abs() <= EPSILON);
+    }
+
+    #[test]
+    fn odr_to_hz_maps_supported_data_rates() {
+        assert_eq!(odr_to_hz(Odr::OneHz), Some(1.0));
+        assert_eq!(odr_to_hz(Odr::TenHz), Some(10.0));
+        assert_eq!(odr_to_hz(Odr::TwentyFiveHz), Some(25.0));
+        assert_eq!(odr_to_hz(Odr::FiftyHz), Some(50.0));
+        assert_eq!(odr_to_hz(Odr::HundredHz), Some(100.0));
+        assert_eq!(odr_to_hz(Odr::TwoHundredHz), Some(200.0));
+        assert_eq!(odr_to_hz(Odr::FourHundredHz), Some(400.0));
+        assert_eq!(odr_to_hz(Odr::SixteenTwentyHz), Some(1620.0));
+        assert_eq!(odr_to_hz(Odr::FiveThousandHz), Some(5376.0));
+    }
+
+    #[test]
+    fn odr_to_hz_returns_none_in_power_down() {
+        assert_eq!(odr_to_hz(Odr::PowerDown), None);
     }
 
     #[test]

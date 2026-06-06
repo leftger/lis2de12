@@ -154,6 +154,48 @@ The async variant exposes the same API surface, returning futures for each metho
 
 ---
 
+## Using `accelerometer` traits
+
+The blocking driver implements both `accelerometer::RawAccelerometer` and
+`accelerometer::Accelerometer`, so it can be used from generic code that only
+depends on those traits:
+
+```rust
+use accelerometer::Accelerometer;
+use embedded_hal::i2c::I2c;
+use lis2de12::{Lis2de12, SlaveAddr};
+
+fn read_norm<I2C>(bus: I2C) -> Result<(), lis2de12::Error<I2C::Error>>
+where
+    I2C: I2c,
+{
+    let mut lis = Lis2de12::new_i2c(bus, SlaveAddr::default())?;
+    let norm = lis.accel_norm()?;
+    let hz = lis.sample_rate()?;
+    defmt::info!("norm={:?} g, odr={} Hz", norm, hz);
+    Ok(())
+}
+```
+
+`sample_rate()` returns an `ErrorKind::Mode` error if the device is configured in
+power-down mode (`Odr::PowerDown`), because no output data stream is active.
+
+You can also write reusable functions over the trait:
+
+```rust
+use accelerometer::Accelerometer;
+
+fn read_any_accel<A: Accelerometer>(accel: &mut A) -> Result<(), accelerometer::Error<A::Error>> {
+    let sample = accel.accel_norm()?;
+    let rate_hz = accel.sample_rate()?;
+    // ... process sample/rate
+    let _ = (sample, rate_hz);
+    Ok(())
+}
+```
+
+---
+
 ## FIFO configuration and burst reads
 
 Configure the hardware FIFO to collect XYZ frames and drain them in bursts when the watermark is reached:
