@@ -1371,7 +1371,6 @@ where
         Ok(buf.len())
     }
 
-    #[allow(clippy::unused_async_trait_impl)]
     async fn flush(&mut self, _address: Self::AddressType) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -1518,7 +1517,6 @@ where
         Ok(buf.len())
     }
 
-    #[allow(clippy::unused_async_trait_impl)]
     async fn flush(&mut self, _address: Self::AddressType) -> Result<(), Self::Error> {
         Ok(())
     }
