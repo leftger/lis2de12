@@ -20,8 +20,8 @@ env:
   MSRV: "1.88"
   NO_STD_TARGET: thumbv8m.main-none-eabihf
   NO_STD_CARGO_ARGS: "--no-default-features"
-  CLIPPY_ARGS: "--lib --all-features"
-  DOCS_ARGS: "--lib --no-deps --all-features"
+  CLIPPY_ARGS: "--lib --all-features --target x86_64-unknown-linux-gnu"
+  DOCS_ARGS: "--lib --no-deps --features std --target x86_64-unknown-linux-gnu"
   CHECK_ARGS: "--lib --features std"
   CI_HOST_TARGET: "x86_64-unknown-linux-gnu"
   CI_UNIT_TEST_ARGS: "--lib --features std"
@@ -133,6 +133,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv8m.main-none-eabihf
       - uses: Swatinem/rust-cache@v2
       - run: cargo publish --dry-run
 
