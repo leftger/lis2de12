@@ -3,6 +3,7 @@
 #![allow(missing_docs)]
 
 use defmt::{Debug2Format, info, panic, warn};
+use defmt_rtt as _;
 use embassy_executor::Spawner;
 use embassy_stm32::bind_interrupts;
 use embassy_stm32::gpio::Speed;
@@ -12,7 +13,7 @@ use embassy_stm32::peripherals::I2C2;
 use embassy_stm32::time::Hertz;
 use embassy_time::Timer;
 use lis2de12::{AxesEnable, FifoConfig, FifoMode, Fs, Lis2de12Async, Lis2de12Config, Odr, OperatingMode, SlaveAddr};
-use {defmt_rtt as _, panic_probe as _};
+use panic_probe as _;
 
 #[cfg(not(feature = "embassy"))]
 compile_error!("Enable the `embassy` feature to build this example.");

@@ -8,6 +8,28 @@ with the pre-1.0 convention that breaking changes increment the minor version.
 
 ---
 
+## [0.3.1] — 2026-06-06
+
+### Added
+
+- Implemented `accelerometer::Accelerometer` for `Lis2de12`, including
+  `accel_norm()` and `sample_rate()`.
+- Added ODR-to-Hz mapping tests for `sample_rate()` behavior.
+
+### Changed
+
+- Updated CI workflows:
+  - host-oriented `check` jobs now explicitly build for `x86_64-unknown-linux-gnu`
+  - `no-std` "all" matrix entry now uses `async,defmt-03` features instead of
+    enabling `std`
+
+### Documentation
+
+- Added README examples showing trait-based usage through
+  `accelerometer::Accelerometer`, including generic helper integration.
+
+---
+
 ## [0.3.0] — 2026-05-19
 
 ### Added

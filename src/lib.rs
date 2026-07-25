@@ -255,10 +255,10 @@ pub enum MotionDetectionMode {
     /// 6-direction position detection (all axes).
     SixDirectionPosition,
     /// 4-direction movement detection (X/Y only; Z ignored).
-    /// Sets D4D_INTx in CTRL_REG5 alongside the SIXD bit.
+    /// Sets `D4D_INTx` in `CTRL_REG5` alongside the SIXD bit.
     FourDirection,
     /// 4-direction position detection (X/Y only; Z ignored).
-    /// Sets D4D_INTx in CTRL_REG5 alongside the SIXD bit.
+    /// Sets `D4D_INTx` in `CTRL_REG5` alongside the SIXD bit.
     FourDirectionPosition,
 }
 
@@ -349,7 +349,7 @@ pub struct MotionConfig {
     pub mode: MotionDetectionMode,
     /// Per-axis event enables.
     pub axes: MotionAxesConfig,
-    /// Threshold value (0-127). LSb weight per full-scale setting:
+    /// Threshold value (0-127). `LSb` weight per full-scale setting:
     /// 16 mg @ ±2 g | 32 mg @ ±4 g | 62 mg @ ±8 g | 186 mg @ ±16 g.
     pub threshold: u8,
     /// Duration value (0-127, `LSb` = 1/ODR).
@@ -513,12 +513,7 @@ impl ClickAxesConfig {
     /// Returns true if any click event is enabled.
     #[must_use]
     pub const fn any(&self) -> bool {
-        self.x_single
-            || self.x_double
-            || self.y_single
-            || self.y_double
-            || self.z_single
-            || self.z_double
+        self.x_single || self.x_double || self.y_single || self.y_double || self.z_single || self.z_double
     }
 }
 
@@ -529,7 +524,7 @@ pub struct ClickConfig {
     pub enable: bool,
     /// Per-axis click event enables.
     pub axes: ClickAxesConfig,
-    /// Click threshold (0-127). 1 LSb = full_scale / 128, so:
+    /// Click threshold (0-127). 1 `LSb` = `full_scale` / 128, so:
     /// 15.6 mg @ ±2 g | 31.2 mg @ ±4 g | 62.5 mg @ ±8 g | 187.5 mg @ ±16 g.
     pub threshold: u8,
     /// Time limit for click detection (0-127, `LSb` = 1/ODR).
@@ -637,7 +632,7 @@ impl ClickConfig {
 pub struct ActivityConfig {
     /// Enable activity detection.
     pub enable: bool,
-    /// Activation threshold (0-127). LSb weight per full-scale setting:
+    /// Activation threshold (0-127). `LSb` weight per full-scale setting:
     /// 16 mg @ ±2 g | 32 mg @ ±4 g | 62 mg @ ±8 g | 186 mg @ ±16 g.
     pub threshold: u8,
     /// Minimum inactivity duration before entering sleep mode (0-255).
@@ -980,7 +975,6 @@ pub struct FifoConfig {
 
 impl FifoConfig {
     /// Disabled FIFO configuration helper.
-    #[must_use]
     pub const fn disabled() -> Self {
         Self {
             enable: false,
@@ -990,7 +984,6 @@ impl FifoConfig {
     }
 
     /// Enabled FIFO configuration helper with the given mode.
-    #[must_use]
     pub const fn enabled(mode: FifoMode) -> Self {
         Self {
             enable: true,
@@ -1000,7 +993,6 @@ impl FifoConfig {
     }
 
     /// Attach a watermark level to this configuration.
-    #[must_use]
     pub const fn with_watermark(self, watermark: u8) -> Self {
         Self {
             watermark: Some(watermark),
@@ -1024,7 +1016,7 @@ impl FifoConfig {
 
 /// Sensor operating mode.
 ///
-/// The LIS2DE12 is an 8-bit-only device: the LPen bit in CTRL_REG1 must always be set to '1'
+/// The LIS2DE12 is an 8-bit-only device: the `LPen` bit in `CTRL_REG1` must always be set to '1'
 /// per the datasheet ("must be set to '1' for the correct operation of the device"). There is no
 /// 10-bit normal mode. Both variants behave identically; `Normal` is kept only for API
 /// compatibility and is deprecated.
@@ -1038,7 +1030,7 @@ pub enum OperatingMode {
 }
 
 impl OperatingMode {
-    const fn lpen(self) -> bool {
+    const fn lpen() -> bool {
         // LPen must always be '1' per datasheet Table 29.
         true
     }
@@ -1154,7 +1146,6 @@ pub struct FifoStatus {
 
 impl FifoStatus {
     /// Create a status snapshot from the raw register value.
-    #[must_use]
     pub fn from_raw(raw: field_sets::FifoSrcReg) -> Self {
         let raw_frames = raw.fss();
         let frames = if raw.empty() {
@@ -1380,6 +1371,7 @@ where
         Ok(buf.len())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn flush(&mut self, _address: Self::AddressType) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -1457,10 +1449,12 @@ where
         data: &mut [u8],
     ) -> Result<(), Self::Error> {
         let addr_byte = 0x80 | address; // Read: bit 7 = 1
-        self.spi.transaction(&mut [
-            hal_async::spi::Operation::Write(&[addr_byte]),
-            hal_async::spi::Operation::Read(data),
-        ]).await
+        self.spi
+            .transaction(&mut [
+                hal_async::spi::Operation::Write(&[addr_byte]),
+                hal_async::spi::Operation::Read(data),
+            ])
+            .await
     }
 }
 
@@ -1477,10 +1471,8 @@ where
     ) -> Result<usize, <Self as RegisterInterface>::Error> {
         // Multi-byte read: bit 7 = 1 (read), bit 6 = 1 (auto-increment)
         let addr_byte = 0xC0 | address;
-        self.spi.transaction(&mut [
-            hal::spi::Operation::Write(&[addr_byte]),
-            hal::spi::Operation::Read(buf),
-        ])?;
+        self.spi
+            .transaction(&mut [hal::spi::Operation::Write(&[addr_byte]), hal::spi::Operation::Read(buf)])?;
         Ok(buf.len())
     }
 
@@ -1508,10 +1500,12 @@ where
     async fn read(&mut self, address: Self::AddressType, buf: &mut [u8]) -> Result<usize, Self::Error> {
         // Multi-byte read: bit 7 = 1 (read), bit 6 = 1 (auto-increment)
         let addr_byte = 0xC0 | address;
-        self.spi.transaction(&mut [
-            hal_async::spi::Operation::Write(&[addr_byte]),
-            hal_async::spi::Operation::Read(buf),
-        ]).await?;
+        self.spi
+            .transaction(&mut [
+                hal_async::spi::Operation::Write(&[addr_byte]),
+                hal_async::spi::Operation::Read(buf),
+            ])
+            .await?;
         Ok(buf.len())
     }
 
@@ -1524,6 +1518,7 @@ where
         Ok(buf.len())
     }
 
+    #[allow(clippy::unused_async_trait_impl)]
     async fn flush(&mut self, _address: Self::AddressType) -> Result<(), Self::Error> {
         Ok(())
     }
@@ -1565,7 +1560,8 @@ pub type Lis2de12Spi<SPI> = Lis2de12<SpiInterface<SPI>>;
 // Generic implementation for all interface types
 impl<IFACE> Lis2de12<IFACE>
 where
-    IFACE: RegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error> + BufferInterface<AddressType = u8>,
+    IFACE: RegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error>
+        + BufferInterface<AddressType = u8>,
     <IFACE as RegisterInterface>::Error: Debug,
 {
     /// Return the active configuration.
@@ -1584,7 +1580,7 @@ where
     /// Read raw acceleration sample triplet.
     pub fn read_raw(&mut self) -> Result<I16x3, Error<<IFACE as RegisterInterface>::Error>> {
         let frame = self.read_fifo_frame()?;
-        Ok(decode_raw(&frame, self.config.mode))
+        Ok(decode_raw(frame, self.config.mode))
     }
 
     /// Read acceleration expressed in milli-g.
@@ -1616,7 +1612,10 @@ where
 
     /// Read multiple FIFO frames into the provided slice, returning the number retrieved.
     /// Reading stops early if the FIFO does not currently hold enough data.
-    pub fn read_fifo_frames(&mut self, frames: &mut [FifoFrame]) -> Result<usize, Error<<IFACE as RegisterInterface>::Error>> {
+    pub fn read_fifo_frames(
+        &mut self,
+        frames: &mut [FifoFrame],
+    ) -> Result<usize, Error<<IFACE as RegisterInterface>::Error>> {
         if frames.is_empty() {
             return Ok(0);
         }
@@ -1664,8 +1663,8 @@ where
     /// The temperature sensor must be enabled via `set_temperature_sensor` or configuration.
     /// Returns the raw left-justified two's complement value.
     pub fn read_temperature_raw(&mut self) -> Result<i16, Error<<IFACE as RegisterInterface>::Error>> {
-        let low = self.device.out_temp_l().read().map_err(Error::from)?.temp_l() as u8;
-        let high = self.device.out_temp_h().read().map_err(Error::from)?.temp_h() as u8;
+        let low = self.device.out_temp_l().read().map_err(Error::from)?.temp_l();
+        let high = self.device.out_temp_h().read().map_err(Error::from)?.temp_h();
         Ok(i16::from_le_bytes([low, high]))
     }
 
@@ -1699,10 +1698,10 @@ where
         // Data is 8-bit resolution, left-justified in 16-bit register
         // Sensitivity: 1 digit/°C (see datasheet Table 5)
         // Convert from left-justified 16-bit to signed 8-bit value
-        Ok((raw >> 8) as f32)
+        Ok(f32::from(raw >> 8))
     }
 
-    /// Route HP-filtered data to the output registers and FIFO (FDS bit in CTRL_REG2).
+    /// Route HP-filtered data to the output registers and FIFO (FDS bit in `CTRL_REG2`).
     /// When enabled, accelerometer output values reflect the high-pass filtered signal
     /// rather than the raw signal.
     pub fn set_high_pass_to_outputs(&mut self, enable: bool) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
@@ -1720,7 +1719,10 @@ where
     /// Connect (`true`) or disconnect (`false`) the internal SDO/SA0 pull-up resistor.
     /// The pull-up is connected by default. Disconnect it to reduce power draw or to
     /// avoid bus conflicts when the pin is driven externally.
-    pub fn set_sdo_pullup_connected(&mut self, connected: bool) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+    pub fn set_sdo_pullup_connected(
+        &mut self,
+        connected: bool,
+    ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.device
             .ctrl_reg_0()
             .modify(|reg: &mut field_sets::CtrlReg0| reg.set_sdo_pu_disc(!connected))
@@ -1745,12 +1747,18 @@ where
     // ========================================================================
 
     /// Configure motion detection on interrupt generator 1 (IA1).
-    pub fn set_motion1_config(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+    pub fn set_motion1_config(
+        &mut self,
+        config: MotionConfig,
+    ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.write_motion_config_int1(config)
     }
 
     /// Configure motion detection on interrupt generator 2 (IA2).
-    pub fn set_motion2_config(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+    pub fn set_motion2_config(
+        &mut self,
+        config: MotionConfig,
+    ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.write_motion_config_int2(config)
     }
 
@@ -1786,7 +1794,10 @@ where
     // ========================================================================
 
     /// Configure activity/inactivity detection (sleep-to-wake).
-    pub fn set_activity_config(&mut self, config: ActivityConfig) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+    pub fn set_activity_config(
+        &mut self,
+        config: ActivityConfig,
+    ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.write_activity_config(config)
     }
 
@@ -1795,12 +1806,18 @@ where
     // ========================================================================
 
     /// Configure interrupt pin routing and polarity.
-    pub fn set_interrupt_config(&mut self, config: InterruptConfig) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+    pub fn set_interrupt_config(
+        &mut self,
+        config: InterruptConfig,
+    ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.write_interrupt_config(config)
     }
 
     /// Set interrupt pin polarity.
-    pub fn set_interrupt_polarity(&mut self, polarity: InterruptPolarity) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+    pub fn set_interrupt_polarity(
+        &mut self,
+        polarity: InterruptPolarity,
+    ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         self.device
             .ctrl_reg_6()
             .modify(|reg: &mut field_sets::CtrlReg6| {
@@ -1817,7 +1834,11 @@ where
         let motion1 = self.motion1_status()?;
         let motion2 = self.motion2_status()?;
         let click = self.click_status()?;
-        Ok(InterruptSources { motion1, motion2, click })
+        Ok(InterruptSources {
+            motion1,
+            motion2,
+            click,
+        })
     }
 
     fn write_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
@@ -1834,7 +1855,7 @@ where
             .ctrl_reg_1()
             .write(|reg: &mut field_sets::CtrlReg1| {
                 reg.set_odr(config.odr);
-                reg.set_lpen(config.mode.lpen());
+                reg.set_lpen(OperatingMode::lpen());
                 reg.set_xen(config.axes.x);
                 reg.set_yen(config.axes.y);
                 reg.set_zen(config.axes.z);
@@ -1871,7 +1892,10 @@ where
         Ok(())
     }
 
-    fn write_motion_config_int1(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+    fn write_motion_config_int1(
+        &mut self,
+        config: MotionConfig,
+    ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         let (aoi, sixd, d4d) = mode_bits(config.mode);
 
         self.device
@@ -1920,7 +1944,10 @@ where
         Ok(())
     }
 
-    fn write_motion_config_int2(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+    fn write_motion_config_int2(
+        &mut self,
+        config: MotionConfig,
+    ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         let (aoi, sixd, d4d) = mode_bits(config.mode);
 
         self.device
@@ -2027,7 +2054,10 @@ where
         Ok(())
     }
 
-    fn write_activity_config(&mut self, config: ActivityConfig) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+    fn write_activity_config(
+        &mut self,
+        config: ActivityConfig,
+    ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         // Configure activation threshold
         self.device
             .act_ths()
@@ -2047,7 +2077,10 @@ where
         Ok(())
     }
 
-    fn write_interrupt_config(&mut self, config: InterruptConfig) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+    fn write_interrupt_config(
+        &mut self,
+        config: InterruptConfig,
+    ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
         // Configure INT1 routing in CTRL_REG3
         self.device
             .ctrl_reg_3()
@@ -2161,7 +2194,8 @@ where
 
 impl<IFACE> RawAccelerometer<I16x3> for Lis2de12<IFACE>
 where
-    IFACE: RegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error> + BufferInterface<AddressType = u8>,
+    IFACE: RegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error>
+        + BufferInterface<AddressType = u8>,
     <IFACE as RegisterInterface>::Error: Debug,
 {
     type Error = <IFACE as RegisterInterface>::Error;
@@ -2173,7 +2207,8 @@ where
 
 impl<IFACE> Accelerometer for Lis2de12<IFACE>
 where
-    IFACE: RegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error> + BufferInterface<AddressType = u8>,
+    IFACE: RegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error>
+        + BufferInterface<AddressType = u8>,
     <IFACE as RegisterInterface>::Error: Debug,
 {
     type Error = <IFACE as RegisterInterface>::Error;
@@ -2206,7 +2241,8 @@ pub type Lis2de12SpiAsync<SPI> = Lis2de12Async<SpiInterfaceAsync<SPI>>;
 // Generic implementation for all async interface types
 impl<IFACE> Lis2de12Async<IFACE>
 where
-    IFACE: AsyncRegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error> + AsyncBufferInterface<AddressType = u8>,
+    IFACE: AsyncRegisterInterface<AddressType = u8, Error = <IFACE as BufferInterfaceError>::Error>
+        + AsyncBufferInterface<AddressType = u8>,
     <IFACE as AsyncRegisterInterface>::Error: Debug,
 {
     /// Return the active configuration.
@@ -2215,7 +2251,10 @@ where
     }
 
     /// Update the sensor configuration asynchronously.
-    pub async fn set_config(&mut self, config: Lis2de12Config) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_config(
+        &mut self,
+        config: Lis2de12Config,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         validate_config_common::<<IFACE as AsyncRegisterInterface>::Error>(&config)?;
         self.apply_config(config).await?;
         self.config = config;
@@ -2225,7 +2264,7 @@ where
     /// Read raw acceleration sample triplet asynchronously.
     pub async fn read_raw(&mut self) -> Result<I16x3, Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let frame = self.read_fifo_frame().await?;
-        Ok(decode_raw(&frame, self.config.mode))
+        Ok(decode_raw(frame, self.config.mode))
     }
 
     /// Read acceleration expressed in milli-g asynchronously.
@@ -2256,7 +2295,10 @@ where
     }
 
     /// Read multiple FIFO frames asynchronously, returning the number retrieved.
-    pub async fn read_fifo_frames(&mut self, frames: &mut [FifoFrame]) -> Result<usize, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn read_fifo_frames(
+        &mut self,
+        frames: &mut [FifoFrame],
+    ) -> Result<usize, Error<<IFACE as AsyncRegisterInterface>::Error>> {
         if frames.is_empty() {
             return Ok(0);
         }
@@ -2294,7 +2336,10 @@ where
     }
 
     /// Enable or disable the on-die temperature sensor asynchronously.
-    pub async fn set_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_temperature_sensor(
+        &mut self,
+        enable: bool,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.write_temperature_sensor(enable).await?;
         self.config.temperature_enable = enable;
         Ok(())
@@ -2304,8 +2349,20 @@ where
     /// The temperature sensor must be enabled via `set_temperature_sensor` or configuration.
     /// Returns the raw left-justified two's complement value.
     pub async fn read_temperature_raw(&mut self) -> Result<i16, Error<<IFACE as AsyncRegisterInterface>::Error>> {
-        let low = self.device.out_temp_l().read_async().await.map_err(Error::from)?.temp_l() as u8;
-        let high = self.device.out_temp_h().read_async().await.map_err(Error::from)?.temp_h() as u8;
+        let low = self
+            .device
+            .out_temp_l()
+            .read_async()
+            .await
+            .map_err(Error::from)?
+            .temp_l() as u8;
+        let high = self
+            .device
+            .out_temp_h()
+            .read_async()
+            .await
+            .map_err(Error::from)?
+            .temp_h() as u8;
         Ok(i16::from_le_bytes([low, high]))
     }
 
@@ -2339,11 +2396,14 @@ where
         // Data is 8-bit resolution, left-justified in 16-bit register
         // Sensitivity: 1 digit/°C (see datasheet Table 5)
         // Convert from left-justified 16-bit to signed 8-bit value
-        Ok((raw >> 8) as f32)
+        Ok(f32::from(raw >> 8))
     }
 
     /// Route HP-filtered data to the output registers and FIFO asynchronously.
-    pub async fn set_high_pass_to_outputs(&mut self, enable: bool) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_high_pass_to_outputs(
+        &mut self,
+        enable: bool,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.device
             .ctrl_reg_2()
             .modify_async(|reg: &mut field_sets::CtrlReg2| reg.set_fds(enable))
@@ -2357,7 +2417,10 @@ where
     }
 
     /// Connect (`true`) or disconnect (`false`) the internal SDO/SA0 pull-up resistor asynchronously.
-    pub async fn set_sdo_pullup_connected(&mut self, connected: bool) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_sdo_pullup_connected(
+        &mut self,
+        connected: bool,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.device
             .ctrl_reg_0()
             .modify_async(|reg: &mut field_sets::CtrlReg0| reg.set_sdo_pu_disc(!connected))
@@ -2367,7 +2430,13 @@ where
 
     /// Return `true` if the internal SDO/SA0 pull-up resistor is connected.
     pub async fn sdo_pullup_connected(&mut self) -> Result<bool, Error<<IFACE as AsyncRegisterInterface>::Error>> {
-        Ok(!self.device.ctrl_reg_0().read_async().await.map_err(Error::from)?.sdo_pu_disc())
+        Ok(!self
+            .device
+            .ctrl_reg_0()
+            .read_async()
+            .await
+            .map_err(Error::from)?
+            .sdo_pu_disc())
     }
 
     /// Issue a reboot command asynchronously.
@@ -2384,12 +2453,18 @@ where
     // ========================================================================
 
     /// Configure motion detection on interrupt generator 1 (IA1) asynchronously.
-    pub async fn set_motion1_config(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_motion1_config(
+        &mut self,
+        config: MotionConfig,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.write_motion_config_int1(config).await
     }
 
     /// Configure motion detection on interrupt generator 2 (IA2) asynchronously.
-    pub async fn set_motion2_config(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_motion2_config(
+        &mut self,
+        config: MotionConfig,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.write_motion_config_int2(config).await
     }
 
@@ -2410,7 +2485,10 @@ where
     // ========================================================================
 
     /// Configure click detection asynchronously.
-    pub async fn set_click_config(&mut self, config: ClickConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_click_config(
+        &mut self,
+        config: ClickConfig,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.write_click_config(config).await
     }
 
@@ -2425,7 +2503,10 @@ where
     // ========================================================================
 
     /// Configure activity/inactivity detection (sleep-to-wake) asynchronously.
-    pub async fn set_activity_config(&mut self, config: ActivityConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_activity_config(
+        &mut self,
+        config: ActivityConfig,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.write_activity_config(config).await
     }
 
@@ -2434,12 +2515,18 @@ where
     // ========================================================================
 
     /// Configure interrupt pin routing and polarity asynchronously.
-    pub async fn set_interrupt_config(&mut self, config: InterruptConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_interrupt_config(
+        &mut self,
+        config: InterruptConfig,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.write_interrupt_config(config).await
     }
 
     /// Set interrupt pin polarity asynchronously.
-    pub async fn set_interrupt_polarity(&mut self, polarity: InterruptPolarity) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_interrupt_polarity(
+        &mut self,
+        polarity: InterruptPolarity,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.device
             .ctrl_reg_6()
             .modify_async(|reg: &mut field_sets::CtrlReg6| {
@@ -2453,14 +2540,23 @@ where
     ///
     /// This reads all interrupt source registers in sequence.
     /// For latched interrupts, reading clears the interrupt flag.
-    pub async fn interrupt_sources(&mut self) -> Result<InterruptSources, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn interrupt_sources(
+        &mut self,
+    ) -> Result<InterruptSources, Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let motion1 = self.motion1_status().await?;
         let motion2 = self.motion2_status().await?;
         let click = self.click_status().await?;
-        Ok(InterruptSources { motion1, motion2, click })
+        Ok(InterruptSources {
+            motion1,
+            motion2,
+            click,
+        })
     }
 
-    async fn write_temperature_sensor(&mut self, enable: bool) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    async fn write_temperature_sensor(
+        &mut self,
+        enable: bool,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.device
             .temp_cfg_reg()
             .write_async(|reg: &mut field_sets::TempCfgReg| {
@@ -2470,12 +2566,15 @@ where
             .map_err(Error::from)
     }
 
-    async fn apply_config(&mut self, config: Lis2de12Config) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    async fn apply_config(
+        &mut self,
+        config: Lis2de12Config,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.device
             .ctrl_reg_1()
             .write_async(|reg: &mut field_sets::CtrlReg1| {
                 reg.set_odr(config.odr);
-                reg.set_lpen(config.mode.lpen());
+                reg.set_lpen(OperatingMode::lpen());
                 reg.set_xen(config.axes.x);
                 reg.set_yen(config.axes.y);
                 reg.set_zen(config.axes.z);
@@ -2516,7 +2615,10 @@ where
         Ok(())
     }
 
-    async fn write_motion_config_int1(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    async fn write_motion_config_int1(
+        &mut self,
+        config: MotionConfig,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let (aoi, sixd, d4d) = mode_bits(config.mode);
 
         self.device
@@ -2570,7 +2672,10 @@ where
         Ok(())
     }
 
-    async fn write_motion_config_int2(&mut self, config: MotionConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    async fn write_motion_config_int2(
+        &mut self,
+        config: MotionConfig,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let (aoi, sixd, d4d) = mode_bits(config.mode);
 
         self.device
@@ -2626,7 +2731,10 @@ where
         Ok(())
     }
 
-    async fn write_click_config(&mut self, config: ClickConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    async fn write_click_config(
+        &mut self,
+        config: ClickConfig,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         // Configure CLICK_CFG
         self.device
             .click_cfg()
@@ -2690,7 +2798,10 @@ where
         Ok(())
     }
 
-    async fn write_activity_config(&mut self, config: ActivityConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    async fn write_activity_config(
+        &mut self,
+        config: ActivityConfig,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         // Configure activation threshold
         self.device
             .act_ths()
@@ -2712,7 +2823,10 @@ where
         Ok(())
     }
 
-    async fn write_interrupt_config(&mut self, config: InterruptConfig) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    async fn write_interrupt_config(
+        &mut self,
+        config: InterruptConfig,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         // Configure INT1 routing in CTRL_REG3
         self.device
             .ctrl_reg_3()
@@ -2758,7 +2872,11 @@ where
     }
 
     /// Create a new async I2C driver with an explicit configuration.
-    pub async fn new_i2c_with_config(i2c: I2C, addr: SlaveAddr, config: Lis2de12Config) -> Result<Self, Error<I2C::Error>> {
+    pub async fn new_i2c_with_config(
+        i2c: I2C,
+        addr: SlaveAddr,
+        config: Lis2de12Config,
+    ) -> Result<Self, Error<I2C::Error>> {
         validate_config_common::<I2C::Error>(&config)?;
 
         let interface = DeviceInterfaceAsync {
@@ -2855,7 +2973,7 @@ where
     Ok(())
 }
 
-fn decode_raw(bytes: &FifoFrame, _mode: OperatingMode) -> I16x3 {
+fn decode_raw(bytes: FifoFrame, _mode: OperatingMode) -> I16x3 {
     // FIFO frame layout: [FIFO_READ_START(0x00), OUT_X_H, reserved, OUT_Y_H, reserved, OUT_Z_H].
     // The LIS2DE12 is always 8-bit; signed axis data sits in bytes[1], [3], [5].
     // Construct i16 from [0, H_byte] then arithmetic-right-shift by 8 to sign-extend.
@@ -2866,6 +2984,7 @@ fn decode_raw(bytes: &FifoFrame, _mode: OperatingMode) -> I16x3 {
 }
 
 fn scale_to_mg(raw: I16x3, mg_per_lsb: f32) -> I16x3 {
+    #[allow(clippy::cast_possible_truncation)]
     fn round_to_i16(value: f32) -> i16 {
         if value >= 0.0 {
             (value + 0.5) as i16
@@ -2875,17 +2994,17 @@ fn scale_to_mg(raw: I16x3, mg_per_lsb: f32) -> I16x3 {
     }
 
     I16x3::new(
-        round_to_i16(raw.x as f32 * mg_per_lsb),
-        round_to_i16(raw.y as f32 * mg_per_lsb),
-        round_to_i16(raw.z as f32 * mg_per_lsb),
+        round_to_i16(f32::from(raw.x) * mg_per_lsb),
+        round_to_i16(f32::from(raw.y) * mg_per_lsb),
+        round_to_i16(f32::from(raw.z) * mg_per_lsb),
     )
 }
 
 fn scale_to_g(raw: I16x3, g_per_lsb: f32) -> F32x3 {
     F32x3::new(
-        raw.x as f32 * g_per_lsb,
-        raw.y as f32 * g_per_lsb,
-        raw.z as f32 * g_per_lsb,
+        f32::from(raw.x) * g_per_lsb,
+        f32::from(raw.y) * g_per_lsb,
+        f32::from(raw.z) * g_per_lsb,
     )
 }
 
@@ -2959,14 +3078,14 @@ mod tests {
         // FIFO frame: [pad, OUT_X_H, pad, OUT_Y_H, pad, OUT_Z_H]
         // Positive values: H-byte in odd positions, even positions are placeholders.
         let frame: FifoFrame = [0x00, 0x01, 0x00, 0x02, 0x00, 0x03];
-        let decoded = decode_raw(&frame, OperatingMode::LowPower);
+        let decoded = decode_raw(frame, OperatingMode::LowPower);
         assert_eq!(decoded.x, 1);
         assert_eq!(decoded.y, 2);
         assert_eq!(decoded.z, 3);
 
         // Negative value: 0xFF in the H-byte position should decode to -1.
         let frame_neg: FifoFrame = [0x00, 0xFF, 0x00, 0xFE, 0x00, 0x80];
-        let decoded_neg = decode_raw(&frame_neg, OperatingMode::LowPower);
+        let decoded_neg = decode_raw(frame_neg, OperatingMode::LowPower);
         assert_eq!(decoded_neg.x, -1);
         assert_eq!(decoded_neg.y, -2);
         assert_eq!(decoded_neg.z, -128);
@@ -3128,8 +3247,7 @@ mod tests {
 
     #[test]
     fn activity_config_threshold_clamps() {
-        let config = ActivityConfig::disabled()
-            .with_threshold(255); // Should be clamped to 127
+        let config = ActivityConfig::disabled().with_threshold(255); // Should be clamped to 127
 
         assert_eq!(config.threshold, 127);
     }
@@ -3195,8 +3313,14 @@ mod tests {
     #[test]
     fn interrupt_sources_any_active() {
         let sources = InterruptSources {
-            motion1: MotionStatus { active: false, ..Default::default() },
-            motion2: MotionStatus { active: true, ..Default::default() },
+            motion1: MotionStatus {
+                active: false,
+                ..Default::default()
+            },
+            motion2: MotionStatus {
+                active: true,
+                ..Default::default()
+            },
             click: ClickStatus::default(),
         };
 
@@ -3207,8 +3331,14 @@ mod tests {
     fn interrupt_config_builder() {
         let config = InterruptConfig::disabled()
             .with_polarity(InterruptPolarity::ActiveLow)
-            .with_int1(Int1Routing { ia1: true, ..Default::default() })
-            .with_int2(Int2Routing { activity: true, ..Default::default() });
+            .with_int1(Int1Routing {
+                ia1: true,
+                ..Default::default()
+            })
+            .with_int2(Int2Routing {
+                activity: true,
+                ..Default::default()
+            });
 
         assert!(matches!(config.polarity, InterruptPolarity::ActiveLow));
         assert!(config.int1.ia1);
