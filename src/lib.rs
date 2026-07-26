@@ -40,7 +40,7 @@
 //!
 //! ## Async I2C
 //!
-//! ```no_run
+//! ```ignore
 //! use lis2de12::{Lis2de12Async, SlaveAddr};
 //! # use embedded_hal_async::i2c::I2c;
 //! # async fn example<I2C: I2c>(i2c: I2C) -> Result<(), lis2de12::Error<I2C::Error>>
@@ -57,7 +57,7 @@
 //!
 //! ## Async SPI
 //!
-//! ```no_run
+//! ```ignore
 //! use lis2de12::Lis2de12Async;
 //! # use embedded_hal_async::spi::SpiDevice;
 //! # async fn example<SPI: SpiDevice>(spi: SPI) -> Result<(), lis2de12::Error<SPI::Error>>
@@ -81,8 +81,8 @@
 //! # where I2C::Error: core::fmt::Debug {
 //!
 //! let config = Lis2de12Config {
-//!     odr: Odr::Hz400,           // 400 Hz output data rate
-//!     scale: Fs::G8,             // ±8g full scale
+//!     odr: Odr::FourHundredHz,   // 400 Hz output data rate
+//!     scale: Fs::PlusMinus8G,     // ±8g full scale
 //!     ..Default::default()
 //! };
 //!
