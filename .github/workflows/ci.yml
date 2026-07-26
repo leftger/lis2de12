@@ -87,6 +87,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.MSRV }}
+          components: rustfmt
       - run: bash .github/scripts/ci_msrv.sh
 
   clippy:
