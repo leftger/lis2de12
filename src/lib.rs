@@ -13,7 +13,7 @@
 //! # where I2C::Error: core::fmt::Debug {
 //!
 //! // Create driver with default configuration
-//! let mut sensor = Lis2de12::new_i2c(i2c, SlaveAddr::default())?;
+//! let mut sensor = Lis2de12::new_i2c(i2c, SlaveAddr::Default)?;
 //!
 //! // Read acceleration in g (floating point)
 //! let accel = sensor.read_g()?;
@@ -47,7 +47,7 @@
 //! # where I2C::Error: core::fmt::Debug {
 //!
 //! // Create async driver with I2C
-//! let mut sensor = Lis2de12Async::new_i2c(i2c, SlaveAddr::default()).await?;
+//! let mut sensor = Lis2de12Async::new_i2c(i2c, SlaveAddr::Default).await?;
 //!
 //! // Read acceleration asynchronously
 //! let accel = sensor.read_g().await?;
@@ -86,7 +86,7 @@
 //!     ..Default::default()
 //! };
 //!
-//! let mut sensor = Lis2de12::new_i2c_with_config(i2c, SlaveAddr::default(), config)?;
+//! let mut sensor = Lis2de12::new_i2c_with_config(i2c, SlaveAddr::Default, config)?;
 //! # Ok(())
 //! # }
 //! ```
@@ -105,7 +105,7 @@
 //!     ..Default::default()
 //! };
 //!
-//! let mut sensor = Lis2de12::new_i2c_with_config(i2c, SlaveAddr::default(), config)?;
+//! let mut sensor = Lis2de12::new_i2c_with_config(i2c, SlaveAddr::Default, config)?;
 //!
 //! // Or enable it after initialization
 //! sensor.set_temperature_sensor(true)?;
@@ -133,8 +133,9 @@
 use core::cmp;
 use core::fmt::Debug;
 
+pub use accelerometer::Error;
 use accelerometer::vector::{F32x3, I16x3};
-use accelerometer::{Accelerometer, Error, ErrorKind, RawAccelerometer};
+use accelerometer::{Accelerometer, ErrorKind, RawAccelerometer};
 #[cfg(feature = "async")]
 use device_driver::{AsyncBufferInterface, AsyncRegisterInterface};
 use device_driver::{BufferInterface, BufferInterfaceError, RegisterInterface};
