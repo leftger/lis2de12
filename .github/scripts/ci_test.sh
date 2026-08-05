@@ -52,6 +52,10 @@ echo "::endgroup::"
 if [ "${CI_INTEGRATION_CHECK:-true}" = "true" ]; then
   echo "::group::Integration check"
   check_cmd="${CI_INTEGRATION_CHECK_CMD:-cargo build --examples --all-features}"
+  # .cargo/config.toml may pin a bare-metal build target that has no std, so pin the host.
+  if [ -n "${CI_HOST_TARGET:-}" ] && [[ "$check_cmd" != *--target* ]]; then
+    check_cmd="${check_cmd} --target ${CI_HOST_TARGET}"
+  fi
   echo "Running: ${check_cmd}"
   # shellcheck disable=SC2086
   eval "${check_cmd}"
