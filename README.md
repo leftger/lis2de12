@@ -1,5 +1,10 @@
 # `lis2de12`
 
+[![crates.io](https://img.shields.io/crates/v/lis2de12.svg)](https://crates.io/crates/lis2de12)
+[![docs.rs](https://img.shields.io/docsrs/lis2de12)](https://docs.rs/lis2de12)
+[![CI](https://github.com/leftger/lis2de12/actions/workflows/ci.yml/badge.svg)](https://github.com/leftger/lis2de12/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+
 Platform-agnostic Rust driver for the ST LIS2DE12 ultra-low-power 3-axis accelerometer. The crate targets `no_std` environments, generates its register API at build time from a YAML manifest, and supports both blocking and asynchronous I²C and SPI transports.
 
 ---

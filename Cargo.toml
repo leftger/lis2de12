@@ -41,6 +41,9 @@ syn = { version = "2.0.111", features = ["full"] }
 # embassy-sync = { version = "0.6.0", default-features = false, features = ["defmt"] }
 # static_cell = "2.1.0"
 
+[target.'cfg(not(target_os = "none"))'.dev-dependencies]
+futures = "0.3"
+
 [lints.rust]
 unsafe_code = "deny"
 missing_docs = "deny"
