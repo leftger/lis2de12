@@ -158,7 +158,7 @@ mod generated {
     );
 }
 
-pub use generated::{Fm, Fs, Lis2de12Device, Odr, St, TempEn, field_sets};
+pub use generated::{Fm, Fs, Hpcf, Hpm, Lis2de12Device, Odr, St, TempEn, field_sets};
 
 /// Number of bytes per FIFO frame (X, Y, Z 16-bit samples).
 pub const FIFO_FRAME_BYTES: usize = 6;
@@ -168,6 +168,20 @@ pub const FIFO_CAPACITY: u8 = 32;
 pub type FifoFrame = [u8; FIFO_FRAME_BYTES];
 /// Highest programmable FIFO watermark level.
 pub const FIFO_WATERMARK_MAX: u8 = 31;
+
+/// Minimum self-test output change at ±2 g (datasheet Table 4), in 8-bit `LSb`.
+pub const SELF_TEST_MIN_LSB_2G: i16 = 4;
+/// Maximum self-test output change at ±2 g (datasheet Table 4), in 8-bit `LSb`.
+pub const SELF_TEST_MAX_LSB_2G: i16 = 90;
+
+/// ST free-fall example threshold at ±2 g (`INT_THS` = 0x16 → ~350 mg).
+pub const FREE_FALL_THRESHOLD_350MG_2G: u8 = 0x16;
+/// ST free-fall example duration (`INT_DURATION` = 0x03, `LSb` = 1/ODR).
+pub const FREE_FALL_DURATION_DEFAULT: u8 = 0x03;
+/// ST wake-up example threshold at ±2 g (`INT_THS` = 0x10 → ~250 mg).
+pub const WAKE_UP_THRESHOLD_250MG_2G: u8 = 0x10;
+/// Typical 6D/4D orientation threshold at ±2 g (~512 mg ≈ 0.5 g).
+pub const ORIENTATION_THRESHOLD_512MG_2G: u8 = 0x20;
 
 /// High-level FIFO operating modes mirroring the `FM` register field.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -180,6 +194,16 @@ pub enum FifoMode {
     Stream,
     /// Stream-to-FIFO mode (stream until trigger then stop-on-full).
     StreamToFifo,
+}
+
+/// Interrupt pin used as the Stream-to-FIFO trigger (`TR` bit in `FIFO_CTRL_REG`).
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+pub enum FifoTriggerPin {
+    /// Trigger on INT1 (`TR` = 0, default).
+    #[default]
+    Int1,
+    /// Trigger on INT2 (`TR` = 1).
+    Int2,
 }
 
 impl From<FifoMode> for Fm {
@@ -321,7 +345,7 @@ impl MotionAxesConfig {
         }
     }
 
-    /// All events enabled on all axes.
+    /// All events enabled on all axes (typical for 6D orientation).
     #[must_use]
     pub const fn all() -> Self {
         Self {
@@ -331,6 +355,19 @@ impl MotionAxesConfig {
             y_low: true,
             z_high: true,
             z_low: true,
+        }
+    }
+
+    /// X/Y high and low events only (typical for 4D portrait/landscape).
+    #[must_use]
+    pub const fn xy_all() -> Self {
+        Self {
+            x_high: true,
+            x_low: true,
+            y_high: true,
+            y_low: true,
+            z_high: false,
+            z_low: false,
         }
     }
 
@@ -437,6 +474,121 @@ impl MotionConfig {
     pub const fn with_high_pass_filter(mut self, enable: bool) -> Self {
         self.high_pass_filter = enable;
         self
+    }
+
+    /// Free-fall detection: AND of X/Y/Z low events (`INT_CFG` = 0x95 pattern).
+    ///
+    /// Matches the ST example (threshold ≈ 350 mg / duration = 3 at ±2 g / 100 Hz).
+    /// Route the matching IA source to an interrupt pin via [`InterruptConfig`].
+    #[must_use]
+    pub const fn free_fall(threshold: u8, duration: u8) -> Self {
+        Self {
+            enable: true,
+            mode: MotionDetectionMode::AndCombination,
+            axes: MotionAxesConfig::all_low(),
+            threshold: if threshold > 127 { 127 } else { threshold },
+            duration: if duration > 127 { 127 } else { duration },
+            latch: LatchMode::Latched,
+            high_pass_filter: false,
+        }
+    }
+
+    /// Free-fall using ST's ±2 g example values (~350 mg, duration 3).
+    #[must_use]
+    pub const fn free_fall_default() -> Self {
+        Self::free_fall(FREE_FALL_THRESHOLD_350MG_2G, FREE_FALL_DURATION_DEFAULT)
+    }
+
+    /// Wake-up / motion detection: OR of X/Y/Z high events on HP-filtered data.
+    ///
+    /// Matches the ST wake-up example (threshold ≈ 250 mg at ±2 g). After applying,
+    /// call [`Lis2de12::reset_high_pass_filter`] once so the filter reference matches
+    /// the current tilt.
+    #[must_use]
+    pub const fn wake_up(threshold: u8, duration: u8) -> Self {
+        Self {
+            enable: true,
+            mode: MotionDetectionMode::OrCombination,
+            axes: MotionAxesConfig::all_high(),
+            threshold: if threshold > 127 { 127 } else { threshold },
+            duration: if duration > 127 { 127 } else { duration },
+            latch: LatchMode::Latched,
+            high_pass_filter: true,
+        }
+    }
+
+    /// Wake-up using ST's ±2 g example threshold (~250 mg) and duration 0.
+    #[must_use]
+    pub const fn wake_up_default() -> Self {
+        Self::wake_up(WAKE_UP_THRESHOLD_250MG_2G, 0)
+    }
+
+    /// 6D position recognition (interrupt while orientation stays in a known zone).
+    #[must_use]
+    pub const fn orientation_6d_position(threshold: u8) -> Self {
+        Self {
+            enable: true,
+            mode: MotionDetectionMode::SixDirectionPosition,
+            axes: MotionAxesConfig::all(),
+            threshold: if threshold > 127 { 127 } else { threshold },
+            duration: 0,
+            latch: LatchMode::Latched,
+            high_pass_filter: false,
+        }
+    }
+
+    /// 6D movement recognition (interrupt when entering a known zone).
+    #[must_use]
+    pub const fn orientation_6d_movement(threshold: u8) -> Self {
+        Self {
+            enable: true,
+            mode: MotionDetectionMode::SixDirection,
+            axes: MotionAxesConfig::all(),
+            threshold: if threshold > 127 { 127 } else { threshold },
+            duration: 0,
+            latch: LatchMode::Latched,
+            high_pass_filter: false,
+        }
+    }
+
+    /// 4D position recognition for portrait/landscape (X/Y only; Z ignored).
+    #[must_use]
+    pub const fn orientation_4d_position(threshold: u8) -> Self {
+        Self {
+            enable: true,
+            mode: MotionDetectionMode::FourDirectionPosition,
+            axes: MotionAxesConfig::xy_all(),
+            threshold: if threshold > 127 { 127 } else { threshold },
+            duration: 0,
+            latch: LatchMode::Latched,
+            high_pass_filter: false,
+        }
+    }
+
+    /// 4D movement recognition for portrait/landscape (X/Y only; Z ignored).
+    #[must_use]
+    pub const fn orientation_4d_movement(threshold: u8) -> Self {
+        Self {
+            enable: true,
+            mode: MotionDetectionMode::FourDirection,
+            axes: MotionAxesConfig::xy_all(),
+            threshold: if threshold > 127 { 127 } else { threshold },
+            duration: 0,
+            latch: LatchMode::Latched,
+            high_pass_filter: false,
+        }
+    }
+
+    /// 6D position recognition with a typical ~0.5 g threshold at ±2 g.
+    #[must_use]
+    pub const fn orientation_6d_default() -> Self {
+        Self::orientation_6d_position(ORIENTATION_THRESHOLD_512MG_2G)
+    }
+
+    /// 4D position recognition with a typical ~0.5 g threshold at ±2 g.
+    #[must_use]
+    pub const fn orientation_4d_default() -> Self {
+        Self::orientation_4d_position(ORIENTATION_THRESHOLD_512MG_2G)
     }
 }
 
@@ -632,6 +784,8 @@ impl ClickConfig {
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub struct ActivityConfig {
     /// Enable activity detection.
+    ///
+    /// When `false`, `ACT_THS` and `ACT_DUR` are cleared (threshold 0 disarms sleep-to-wake).
     pub enable: bool,
     /// Activation threshold (0-127). `LSb` weight per full-scale setting:
     /// 16 mg @ ±2 g | 32 mg @ ±4 g | 62 mg @ ±8 g | 186 mg @ ±16 g.
@@ -797,6 +951,59 @@ impl InterruptConfig {
 // Interrupt Status Types
 // ============================================================================
 
+/// Device face / axis direction decoded from a 6D/4D `INT_SRC` snapshot.
+///
+/// Values correspond to which axis event bit is set (`XH`/`XL`/…). Mapping to
+/// portrait/landscape depends on how the sensor is mounted in the product.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+pub enum DeviceOrientation {
+    /// No single known zone (idle, transition, or multiple bits set).
+    #[default]
+    Unknown,
+    /// `XH` — acceleration above threshold on +X.
+    PlusX,
+    /// `XL` — acceleration above threshold on −X.
+    MinusX,
+    /// `YH` — acceleration above threshold on +Y.
+    PlusY,
+    /// `YL` — acceleration above threshold on −Y.
+    MinusY,
+    /// `ZH` — acceleration above threshold on +Z.
+    PlusZ,
+    /// `ZL` — acceleration above threshold on −Z.
+    MinusZ,
+}
+
+impl DeviceOrientation {
+    /// Returns `true` when a single known zone was decoded.
+    #[must_use]
+    pub const fn is_known(self) -> bool {
+        !matches!(self, Self::Unknown)
+    }
+
+    /// Portrait/landscape helper for 4D X/Y events (Z faces map to [`Unknown`](Self::Unknown)).
+    ///
+    /// Convention: ±Y → portrait, ±X → landscape. Adjust in application code if the
+    /// module is mounted differently.
+    #[must_use]
+    pub const fn display_orientation(self) -> Option<DisplayOrientation> {
+        match self {
+            Self::PlusY | Self::MinusY => Some(DisplayOrientation::Portrait),
+            Self::PlusX | Self::MinusX => Some(DisplayOrientation::Landscape),
+            Self::PlusZ | Self::MinusZ | Self::Unknown => None,
+        }
+    }
+}
+
+/// Coarse display orientation derived from 4D X/Y events.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum DisplayOrientation {
+    /// Gravity predominantly along ±Y.
+    Portrait,
+    /// Gravity predominantly along ±X.
+    Landscape,
+}
+
 /// Motion detection status from `INT1_SRC` or `INT2_SRC` registers.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 #[allow(clippy::struct_excessive_bools)]
@@ -846,6 +1053,47 @@ impl MotionStatus {
     #[must_use]
     pub const fn any_event(&self) -> bool {
         self.x_high || self.x_low || self.y_high || self.y_low || self.z_high || self.z_low
+    }
+
+    /// Decode 6D/4D orientation from the axis event bits.
+    ///
+    /// Returns [`DeviceOrientation::Unknown`] unless exactly one of the six
+    /// direction bits is set (transition zones / multi-bit states are unknown).
+    #[must_use]
+    pub const fn orientation(self) -> DeviceOrientation {
+        let mut found = DeviceOrientation::Unknown;
+        let mut count = 0u8;
+
+        if self.x_high {
+            found = DeviceOrientation::PlusX;
+            count += 1;
+        }
+        if self.x_low {
+            found = DeviceOrientation::MinusX;
+            count += 1;
+        }
+        if self.y_high {
+            found = DeviceOrientation::PlusY;
+            count += 1;
+        }
+        if self.y_low {
+            found = DeviceOrientation::MinusY;
+            count += 1;
+        }
+        if self.z_high {
+            found = DeviceOrientation::PlusZ;
+            count += 1;
+        }
+        if self.z_low {
+            found = DeviceOrientation::MinusZ;
+            count += 1;
+        }
+
+        if count == 1 {
+            found
+        } else {
+            DeviceOrientation::Unknown
+        }
     }
 }
 
@@ -972,6 +1220,8 @@ pub struct FifoConfig {
     pub mode: FifoMode,
     /// Optional watermark threshold (0–31 frames).
     pub watermark: Option<u8>,
+    /// Stream-to-FIFO trigger pin selection (`TR` bit).
+    pub trigger: FifoTriggerPin,
 }
 
 impl FifoConfig {
@@ -981,6 +1231,7 @@ impl FifoConfig {
             enable: false,
             mode: FifoMode::Bypass,
             watermark: None,
+            trigger: FifoTriggerPin::Int1,
         }
     }
 
@@ -990,6 +1241,7 @@ impl FifoConfig {
             enable: true,
             mode,
             watermark: None,
+            trigger: FifoTriggerPin::Int1,
         }
     }
 
@@ -999,6 +1251,11 @@ impl FifoConfig {
             watermark: Some(watermark),
             ..self
         }
+    }
+
+    /// Select the Stream-to-FIFO trigger pin.
+    pub const fn with_trigger(self, trigger: FifoTriggerPin) -> Self {
+        Self { trigger, ..self }
     }
 
     /// Watermark value written to the device.
@@ -1012,6 +1269,185 @@ impl FifoConfig {
         } else {
             0
         }
+    }
+
+    /// `TR` bit value for `FIFO_CTRL_REG`.
+    #[must_use]
+    const fn trigger_bit(self) -> bool {
+        matches!(self.trigger, FifoTriggerPin::Int2)
+    }
+}
+
+/// High-pass filter configuration (`CTRL_REG2` mode/cutoff/FDS bits).
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub struct HighPassConfig {
+    /// High-pass filter mode (`HPM`).
+    pub mode: Hpm,
+    /// Cutoff frequency selection (`HPCF`), as a fraction of ODR.
+    pub cutoff: Hpcf,
+    /// Route filtered data to output registers and FIFO (`FDS`).
+    pub filtered_data_selection: bool,
+}
+
+impl Default for HighPassConfig {
+    fn default() -> Self {
+        Self {
+            mode: Hpm::NormalWithReset,
+            cutoff: Hpcf::TwoPercent,
+            filtered_data_selection: false,
+        }
+    }
+}
+
+impl HighPassConfig {
+    /// Default filter configuration (normal-with-reset, ~2% ODR cutoff, FDS off).
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            mode: Hpm::NormalWithReset,
+            cutoff: Hpcf::TwoPercent,
+            filtered_data_selection: false,
+        }
+    }
+
+    /// Set filter mode.
+    #[must_use]
+    pub const fn with_mode(mut self, mode: Hpm) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Set cutoff selection.
+    #[must_use]
+    pub const fn with_cutoff(mut self, cutoff: Hpcf) -> Self {
+        self.cutoff = cutoff;
+        self
+    }
+
+    /// Enable or disable filtered-data selection (`FDS`).
+    #[must_use]
+    pub const fn with_filtered_data_selection(mut self, enable: bool) -> Self {
+        self.filtered_data_selection = enable;
+        self
+    }
+}
+
+/// Acceleration data-ready / overrun status from `STATUS_REG`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+#[allow(clippy::struct_excessive_bools)]
+pub struct DataStatus {
+    /// New data available on X, Y, and Z.
+    pub xyz_data_available: bool,
+    /// X-axis new data available.
+    pub x_data_available: bool,
+    /// Y-axis new data available.
+    pub y_data_available: bool,
+    /// Z-axis new data available.
+    pub z_data_available: bool,
+    /// X/Y/Z overrun (new data overwrote unread data).
+    pub xyz_overrun: bool,
+    /// X-axis overrun.
+    pub x_overrun: bool,
+    /// Y-axis overrun.
+    pub y_overrun: bool,
+    /// Z-axis overrun.
+    pub z_overrun: bool,
+}
+
+impl DataStatus {
+    /// Returns `true` when a full XYZ sample is ready to read.
+    #[must_use]
+    pub const fn data_ready(self) -> bool {
+        self.xyz_data_available
+    }
+
+    /// Returns `true` if any axis overrun flag is set.
+    #[must_use]
+    pub const fn any_overrun(self) -> bool {
+        self.xyz_overrun || self.x_overrun || self.y_overrun || self.z_overrun
+    }
+}
+
+impl From<field_sets::StatusReg> for DataStatus {
+    fn from(raw: field_sets::StatusReg) -> Self {
+        Self {
+            xyz_data_available: raw.zyxda(),
+            x_data_available: raw.xda(),
+            y_data_available: raw.yda(),
+            z_data_available: raw.zda(),
+            xyz_overrun: raw.zyxor(),
+            x_overrun: raw.xor(),
+            y_overrun: raw.yor(),
+            z_overrun: raw.zor(),
+        }
+    }
+}
+
+/// Temperature data-ready / overrun status from `STATUS_REG_AUX`.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
+pub struct TemperatureStatus {
+    /// New temperature data available.
+    pub data_available: bool,
+    /// Temperature data overrun.
+    pub overrun: bool,
+}
+
+impl From<field_sets::StatusRegAux> for TemperatureStatus {
+    fn from(raw: field_sets::StatusRegAux) -> Self {
+        Self {
+            data_available: raw.tda(),
+            overrun: raw.tor(),
+        }
+    }
+}
+
+/// Result of comparing no-self-test and self-test acceleration samples.
+#[derive(Copy, Clone, Debug)]
+pub struct SelfTestResult {
+    /// Absolute per-axis delta (`|ST − nost|`) in 8-bit `LSb`.
+    pub delta: I16x3,
+    /// X-axis delta within datasheet limits (scaled for current full-scale).
+    pub x_ok: bool,
+    /// Y-axis delta within datasheet limits (scaled for current full-scale).
+    pub y_ok: bool,
+    /// Z-axis delta within datasheet limits (scaled for current full-scale).
+    pub z_ok: bool,
+}
+
+impl SelfTestResult {
+    /// Returns `true` when all axes pass.
+    #[must_use]
+    pub const fn passed(self) -> bool {
+        self.x_ok && self.y_ok && self.z_ok
+    }
+}
+
+/// Evaluate self-test output change against datasheet Table 4 limits.
+///
+/// `nost` is a sample with self-test disabled; `st` is a sample after enabling
+/// self-test (discard the first two samples after enabling, per the datasheet).
+/// Limits are specified at ±2 g and scaled by sensitivity for other full-scale settings.
+#[must_use]
+pub fn evaluate_self_test(nost: I16x3, st: I16x3, scale: Fs) -> SelfTestResult {
+    let delta = I16x3::new((st.x - nost.x).abs(), (st.y - nost.y).abs(), (st.z - nost.z).abs());
+    let (min_lsb, max_lsb) = self_test_limits_lsb(scale);
+    SelfTestResult {
+        delta,
+        x_ok: delta.x >= min_lsb && delta.x <= max_lsb,
+        y_ok: delta.y >= min_lsb && delta.y <= max_lsb,
+        z_ok: delta.z >= min_lsb && delta.z <= max_lsb,
+    }
+}
+
+fn self_test_limits_lsb(scale: Fs) -> (i16, i16) {
+    // Table 4 specifies limits at ±2 g. Scale by the sensitivity ratio so the
+    // equivalent milli-g window is preserved at other full-scale settings.
+    // Integer math keeps this usable on no_std targets without libm.
+    match scale {
+        Fs::PlusMinus2G => (SELF_TEST_MIN_LSB_2G, SELF_TEST_MAX_LSB_2G),
+        Fs::PlusMinus4G => (2, 45),
+        Fs::PlusMinus8G => (1, 22),
+        Fs::PlusMinus16G => (1, 7),
     }
 }
 
@@ -1742,6 +2178,130 @@ where
     }
 
     // ========================================================================
+    // Self-test
+    // ========================================================================
+
+    /// Enable or disable the electrostatic self-test (`ST` bits in `CTRL_REG4`).
+    ///
+    /// After enabling, discard the first two samples before using the reading for
+    /// evaluation (datasheet Table 4 note 6). Compare against a no-self-test sample
+    /// with [`evaluate_self_test`].
+    pub fn set_self_test(&mut self, mode: St) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+        self.device
+            .ctrl_reg_4()
+            .modify(|reg: &mut field_sets::CtrlReg4| reg.set_st(mode))
+            .map_err(Error::from)
+    }
+
+    /// Read the current self-test mode.
+    pub fn self_test(&mut self) -> Result<St, Error<<IFACE as RegisterInterface>::Error>> {
+        Ok(self.device.ctrl_reg_4().read().map_err(Error::from)?.st())
+    }
+
+    // ========================================================================
+    // High-pass filter / reference
+    // ========================================================================
+
+    /// Configure high-pass filter mode, cutoff, and filtered-data selection.
+    ///
+    /// Preserves the per-function HP enables (`HPCLICK` / `HP_IA1` / `HP_IA2`) already
+    /// programmed via motion/click configuration.
+    pub fn set_high_pass_config(
+        &mut self,
+        config: HighPassConfig,
+    ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+        self.device
+            .ctrl_reg_2()
+            .modify(|reg: &mut field_sets::CtrlReg2| {
+                reg.set_hpm(config.mode);
+                reg.set_hpcf(config.cutoff);
+                reg.set_fds(config.filtered_data_selection);
+            })
+            .map_err(Error::from)
+    }
+
+    /// Read the current high-pass filter configuration.
+    pub fn high_pass_config(&mut self) -> Result<HighPassConfig, Error<<IFACE as RegisterInterface>::Error>> {
+        let reg = self.device.ctrl_reg_2().read().map_err(Error::from)?;
+        Ok(HighPassConfig {
+            mode: reg.hpm(),
+            cutoff: reg.hpcf(),
+            filtered_data_selection: reg.fds(),
+        })
+    }
+
+    /// Write the high-pass filter reference value (`REFERENCE` register).
+    pub fn set_reference(&mut self, value: u8) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+        self.device
+            .reference()
+            .write(|reg: &mut field_sets::Reference| reg.set_reference(value))
+            .map_err(Error::from)
+    }
+
+    /// Read the high-pass filter reference value.
+    pub fn reference(&mut self) -> Result<u8, Error<<IFACE as RegisterInterface>::Error>> {
+        Ok(self.device.reference().read().map_err(Error::from)?.reference())
+    }
+
+    /// Reset the high-pass filter by reading the `REFERENCE` register.
+    ///
+    /// Effective when the filter mode is [`Hpm::NormalWithReset`].
+    pub fn reset_high_pass_filter(&mut self) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+        let _ = self.device.reference().read().map_err(Error::from)?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Data / temperature status
+    // ========================================================================
+
+    /// Read acceleration data-ready and overrun flags from `STATUS_REG`.
+    pub fn data_status(&mut self) -> Result<DataStatus, Error<<IFACE as RegisterInterface>::Error>> {
+        let raw = self.device.status_reg().read().map_err(Error::from)?;
+        Ok(DataStatus::from(raw))
+    }
+
+    /// Returns `true` when a new XYZ sample is available (`ZYXDA`).
+    pub fn data_ready(&mut self) -> Result<bool, Error<<IFACE as RegisterInterface>::Error>> {
+        Ok(self.data_status()?.data_ready())
+    }
+
+    /// Read temperature data-ready and overrun flags from `STATUS_REG_AUX`.
+    pub fn temperature_status(
+        &mut self,
+    ) -> Result<TemperatureStatus, Error<<IFACE as RegisterInterface>::Error>> {
+        let raw = self.device.status_reg_aux().read().map_err(Error::from)?;
+        Ok(TemperatureStatus::from(raw))
+    }
+
+    // ========================================================================
+    // FIFO helpers
+    // ========================================================================
+
+    /// Reset the FIFO by briefly switching to Bypass mode, then restoring the
+    /// configured FIFO mode/watermark/trigger from [`Lis2de12Config`].
+    ///
+    /// Required after FIFO mode fills and stops collecting (datasheet §5.1.2).
+    pub fn reset_fifo(&mut self) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
+        self.device
+            .fifo_ctrl_reg()
+            .modify(|reg: &mut field_sets::FifoCtrlReg| {
+                reg.set_fm(Fm::Bypass);
+            })
+            .map_err(Error::from)?;
+
+        let fifo = self.config.fifo;
+        self.device
+            .fifo_ctrl_reg()
+            .write(|reg: &mut field_sets::FifoCtrlReg| {
+                reg.set_fm(fifo.mode.into());
+                reg.set_tr(fifo.trigger_bit());
+                reg.set_fth(fifo.effective_threshold());
+            })
+            .map_err(Error::from)
+    }
+
+    // ========================================================================
     // Motion Detection
     // ========================================================================
 
@@ -1882,7 +2442,7 @@ where
             .fifo_ctrl_reg()
             .write(|reg: &mut field_sets::FifoCtrlReg| {
                 reg.set_fm(config.fifo.mode.into());
-                reg.set_tr(false);
+                reg.set_tr(config.fifo.trigger_bit());
                 reg.set_fth(config.fifo.effective_threshold());
             })
             .map_err(Error::from)?;
@@ -2057,19 +2617,24 @@ where
         &mut self,
         config: ActivityConfig,
     ) -> Result<(), Error<<IFACE as RegisterInterface>::Error>> {
-        // Configure activation threshold
+        // Sleep-to-wake is armed by a non-zero ACT_THS; disable clears both registers.
+        let (threshold, duration) = if config.enable {
+            (config.threshold.min(127), config.duration)
+        } else {
+            (0, 0)
+        };
+
         self.device
             .act_ths()
             .write(|reg: &mut field_sets::ActThs| {
-                reg.set_acth(config.threshold.min(127));
+                reg.set_acth(threshold);
             })
             .map_err(Error::from)?;
 
-        // Configure duration
         self.device
             .act_dur()
             .write(|reg: &mut field_sets::ActDur| {
-                reg.set_act_d(config.duration);
+                reg.set_act_d(duration);
             })
             .map_err(Error::from)?;
 
@@ -2448,6 +3013,139 @@ where
     }
 
     // ========================================================================
+    // Self-test (Async)
+    // ========================================================================
+
+    /// Enable or disable the electrostatic self-test asynchronously.
+    pub async fn set_self_test(
+        &mut self,
+        mode: St,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        self.device
+            .ctrl_reg_4()
+            .modify_async(|reg: &mut field_sets::CtrlReg4| reg.set_st(mode))
+            .await
+            .map_err(Error::from)
+    }
+
+    /// Read the current self-test mode asynchronously.
+    pub async fn self_test(&mut self) -> Result<St, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        Ok(self.device.ctrl_reg_4().read_async().await.map_err(Error::from)?.st())
+    }
+
+    // ========================================================================
+    // High-pass filter / reference (Async)
+    // ========================================================================
+
+    /// Configure high-pass filter mode, cutoff, and filtered-data selection asynchronously.
+    pub async fn set_high_pass_config(
+        &mut self,
+        config: HighPassConfig,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        self.device
+            .ctrl_reg_2()
+            .modify_async(|reg: &mut field_sets::CtrlReg2| {
+                reg.set_hpm(config.mode);
+                reg.set_hpcf(config.cutoff);
+                reg.set_fds(config.filtered_data_selection);
+            })
+            .await
+            .map_err(Error::from)
+    }
+
+    /// Read the current high-pass filter configuration asynchronously.
+    pub async fn high_pass_config(
+        &mut self,
+    ) -> Result<HighPassConfig, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        let reg = self.device.ctrl_reg_2().read_async().await.map_err(Error::from)?;
+        Ok(HighPassConfig {
+            mode: reg.hpm(),
+            cutoff: reg.hpcf(),
+            filtered_data_selection: reg.fds(),
+        })
+    }
+
+    /// Write the high-pass filter reference value asynchronously.
+    pub async fn set_reference(
+        &mut self,
+        value: u8,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        self.device
+            .reference()
+            .write_async(|reg: &mut field_sets::Reference| reg.set_reference(value))
+            .await
+            .map_err(Error::from)
+    }
+
+    /// Read the high-pass filter reference value asynchronously.
+    pub async fn reference(&mut self) -> Result<u8, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        Ok(self
+            .device
+            .reference()
+            .read_async()
+            .await
+            .map_err(Error::from)?
+            .reference())
+    }
+
+    /// Reset the high-pass filter by reading the `REFERENCE` register asynchronously.
+    pub async fn reset_high_pass_filter(
+        &mut self,
+    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        let _ = self.device.reference().read_async().await.map_err(Error::from)?;
+        Ok(())
+    }
+
+    // ========================================================================
+    // Data / temperature status (Async)
+    // ========================================================================
+
+    /// Read acceleration data-ready and overrun flags asynchronously.
+    pub async fn data_status(&mut self) -> Result<DataStatus, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        let raw = self.device.status_reg().read_async().await.map_err(Error::from)?;
+        Ok(DataStatus::from(raw))
+    }
+
+    /// Returns `true` when a new XYZ sample is available asynchronously.
+    pub async fn data_ready(&mut self) -> Result<bool, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        Ok(self.data_status().await?.data_ready())
+    }
+
+    /// Read temperature data-ready and overrun flags asynchronously.
+    pub async fn temperature_status(
+        &mut self,
+    ) -> Result<TemperatureStatus, Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        let raw = self.device.status_reg_aux().read_async().await.map_err(Error::from)?;
+        Ok(TemperatureStatus::from(raw))
+    }
+
+    // ========================================================================
+    // FIFO helpers (Async)
+    // ========================================================================
+
+    /// Reset the FIFO asynchronously by switching through Bypass mode.
+    pub async fn reset_fifo(&mut self) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+        self.device
+            .fifo_ctrl_reg()
+            .modify_async(|reg: &mut field_sets::FifoCtrlReg| {
+                reg.set_fm(Fm::Bypass);
+            })
+            .await
+            .map_err(Error::from)?;
+
+        let fifo = self.config.fifo;
+        self.device
+            .fifo_ctrl_reg()
+            .write_async(|reg: &mut field_sets::FifoCtrlReg| {
+                reg.set_fm(fifo.mode.into());
+                reg.set_tr(fifo.trigger_bit());
+                reg.set_fth(fifo.effective_threshold());
+            })
+            .await
+            .map_err(Error::from)
+    }
+
+    // ========================================================================
     // Motion Detection (Async)
     // ========================================================================
 
@@ -2604,7 +3302,7 @@ where
             .fifo_ctrl_reg()
             .write_async(|reg: &mut field_sets::FifoCtrlReg| {
                 reg.set_fm(config.fifo.mode.into());
-                reg.set_tr(false);
+                reg.set_tr(config.fifo.trigger_bit());
                 reg.set_fth(config.fifo.effective_threshold());
             })
             .await
@@ -2801,20 +3499,25 @@ where
         &mut self,
         config: ActivityConfig,
     ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
-        // Configure activation threshold
+        // Sleep-to-wake is armed by a non-zero ACT_THS; disable clears both registers.
+        let (threshold, duration) = if config.enable {
+            (config.threshold.min(127), config.duration)
+        } else {
+            (0, 0)
+        };
+
         self.device
             .act_ths()
             .write_async(|reg: &mut field_sets::ActThs| {
-                reg.set_acth(config.threshold.min(127));
+                reg.set_acth(threshold);
             })
             .await
             .map_err(Error::from)?;
 
-        // Configure duration
         self.device
             .act_dur()
             .write_async(|reg: &mut field_sets::ActDur| {
-                reg.set_act_d(config.duration);
+                reg.set_act_d(duration);
             })
             .await
             .map_err(Error::from)?;
@@ -3134,6 +3837,7 @@ mod tests {
             enable: false,
             mode: FifoMode::Bypass,
             watermark: Some(12),
+            trigger: FifoTriggerPin::Int1,
         };
 
         assert_eq!(config.effective_threshold(), 0);
@@ -3145,9 +3849,78 @@ mod tests {
             enable: true,
             mode: FifoMode::Stream,
             watermark: Some(40),
+            trigger: FifoTriggerPin::Int1,
         };
 
         assert_eq!(config.effective_threshold(), FIFO_WATERMARK_MAX);
+    }
+
+    #[test]
+    fn fifo_config_with_trigger_selects_int2() {
+        let config = FifoConfig::enabled(FifoMode::StreamToFifo).with_trigger(FifoTriggerPin::Int2);
+        assert!(config.trigger_bit());
+        assert!(matches!(config.trigger, FifoTriggerPin::Int2));
+    }
+
+    #[test]
+    fn evaluate_self_test_accepts_in_range_delta_at_2g() {
+        let nost = I16x3::new(0, 0, 0);
+        let st = I16x3::new(20, -25, 40);
+        let result = evaluate_self_test(nost, st, Fs::PlusMinus2G);
+        assert!(result.passed());
+        assert_eq!(result.delta.x, 20);
+        assert_eq!(result.delta.y, 25);
+        assert_eq!(result.delta.z, 40);
+    }
+
+    #[test]
+    fn evaluate_self_test_rejects_out_of_range_delta() {
+        let nost = I16x3::new(0, 0, 0);
+        let st = I16x3::new(1, 20, 20); // X below min
+        let result = evaluate_self_test(nost, st, Fs::PlusMinus2G);
+        assert!(!result.passed());
+        assert!(!result.x_ok);
+        assert!(result.y_ok);
+        assert!(result.z_ok);
+    }
+
+    #[test]
+    fn self_test_limits_scale_with_full_scale() {
+        let (min_2g, max_2g) = self_test_limits_lsb(Fs::PlusMinus2G);
+        assert_eq!(min_2g, SELF_TEST_MIN_LSB_2G);
+        assert_eq!(max_2g, SELF_TEST_MAX_LSB_2G);
+
+        let (min_4g, max_4g) = self_test_limits_lsb(Fs::PlusMinus4G);
+        // Sensitivity doubles → LSb limits halve
+        assert_eq!(min_4g, 2);
+        assert_eq!(max_4g, 45);
+    }
+
+    #[test]
+    fn high_pass_config_builder() {
+        let config = HighPassConfig::new()
+            .with_mode(Hpm::AutoresetOnInt)
+            .with_cutoff(Hpcf::HalfPercent)
+            .with_filtered_data_selection(true);
+        assert!(matches!(config.mode, Hpm::AutoresetOnInt));
+        assert!(matches!(config.cutoff, Hpcf::HalfPercent));
+        assert!(config.filtered_data_selection);
+    }
+
+    #[test]
+    fn data_status_helpers() {
+        let status = DataStatus {
+            xyz_data_available: true,
+            x_data_available: true,
+            y_data_available: true,
+            z_data_available: true,
+            xyz_overrun: false,
+            x_overrun: true,
+            y_overrun: false,
+            z_overrun: false,
+        };
+        assert!(status.data_ready());
+        assert!(status.any_overrun());
     }
 
     #[test]
@@ -3288,6 +4061,67 @@ mod tests {
         assert!(status.y_event());
         assert!(!status.z_event());
         assert!(status.any_event());
+    }
+
+    #[test]
+    fn motion_presets_match_st_patterns() {
+        let ff = MotionConfig::free_fall_default();
+        assert!(ff.enable);
+        assert!(matches!(ff.mode, MotionDetectionMode::AndCombination));
+        assert!(ff.axes.x_low && ff.axes.y_low && ff.axes.z_low);
+        assert!(!ff.axes.x_high && !ff.axes.y_high && !ff.axes.z_high);
+        assert_eq!(ff.threshold, FREE_FALL_THRESHOLD_350MG_2G);
+        assert_eq!(ff.duration, FREE_FALL_DURATION_DEFAULT);
+        assert!(!ff.high_pass_filter);
+        assert!(matches!(ff.latch, LatchMode::Latched));
+
+        let wake = MotionConfig::wake_up_default();
+        assert!(matches!(wake.mode, MotionDetectionMode::OrCombination));
+        assert!(wake.axes.x_high && wake.axes.y_high && wake.axes.z_high);
+        assert!(!wake.axes.x_low);
+        assert!(wake.high_pass_filter);
+        assert_eq!(wake.threshold, WAKE_UP_THRESHOLD_250MG_2G);
+
+        let orient6 = MotionConfig::orientation_6d_default();
+        assert!(matches!(orient6.mode, MotionDetectionMode::SixDirectionPosition));
+        assert!(orient6.axes.any());
+        assert!(orient6.axes.z_high);
+
+        let orient4 = MotionConfig::orientation_4d_default();
+        assert!(matches!(orient4.mode, MotionDetectionMode::FourDirectionPosition));
+        assert!(orient4.axes.x_high && orient4.axes.y_low);
+        assert!(!orient4.axes.z_high && !orient4.axes.z_low);
+    }
+
+    #[test]
+    fn motion_status_orientation_decodes_single_face() {
+        let zh = MotionStatus {
+            active: true,
+            z_high: true,
+            ..MotionStatus::default()
+        };
+        assert!(matches!(zh.orientation(), DeviceOrientation::PlusZ));
+        assert!(zh.orientation().is_known());
+        assert!(zh.orientation().display_orientation().is_none());
+
+        let xl = MotionStatus {
+            active: true,
+            x_low: true,
+            ..MotionStatus::default()
+        };
+        assert!(matches!(xl.orientation(), DeviceOrientation::MinusX));
+        assert!(matches!(
+            xl.orientation().display_orientation(),
+            Some(DisplayOrientation::Landscape)
+        ));
+
+        let ambiguous = MotionStatus {
+            active: true,
+            x_high: true,
+            y_high: true,
+            ..MotionStatus::default()
+        };
+        assert!(matches!(ambiguous.orientation(), DeviceOrientation::Unknown));
     }
 
     #[test]

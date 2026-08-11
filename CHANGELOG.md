@@ -8,6 +8,36 @@ with the pre-1.0 convention that breaking changes increment the minor version.
 
 ---
 
+## [0.4.0] — 2026-08-11
+
+### Added
+
+- Self-test API: `set_self_test` / `self_test`, `evaluate_self_test`, and
+  Table 4 limit constants (`SELF_TEST_MIN_LSB_2G` / `SELF_TEST_MAX_LSB_2G`).
+- High-pass filter config: `HighPassConfig`, `set_high_pass_config` /
+  `high_pass_config`, plus `set_reference` / `reference` /
+  `reset_high_pass_filter`. Re-exports `Hpm` and `Hpcf`.
+- Data-ready helpers: `data_status`, `data_ready`, `temperature_status`
+  (`DataStatus` / `TemperatureStatus`).
+- FIFO Stream-to-FIFO trigger pin (`FifoTriggerPin`) and `reset_fifo()`.
+- Motion presets aligned with ST examples: `free_fall` / `wake_up` /
+  6D & 4D orientation helpers, plus threshold constants.
+- Orientation decode: `DeviceOrientation`, `DisplayOrientation`, and
+  `MotionStatus::orientation()`.
+- `MotionAxesConfig::xy_all()` for 4D portrait/landscape setups.
+
+### Fixed
+
+- `ActivityConfig.enable = false` now clears `ACT_THS` / `ACT_DUR` instead of
+  leaving a non-zero threshold armed.
+
+### Changed
+
+- **Breaking:** `FifoConfig` gained a `trigger: FifoTriggerPin` field (default
+  INT1 via `disabled()` / `enabled()` / `with_trigger()`).
+
+---
+
 ## [0.3.1] — 2026-06-06
 
 ### Added

@@ -8,8 +8,8 @@ use std::rc::Rc;
 use accelerometer::ErrorKind;
 use lis2de12::{
     ActivityConfig, AxesEnable, ClickAxesConfig, ClickConfig, FIFO_CAPACITY, FIFO_FRAME_BYTES, FifoConfig, FifoMode,
-    Fs, Int1Routing, Int2Routing, InterruptConfig, InterruptPolarity, LatchMode, Lis2de12, Lis2de12Config,
-    MotionAxesConfig, MotionConfig, MotionDetectionMode, Odr, SlaveAddr,
+    FifoTriggerPin, Fs, HighPassConfig, Hpcf, Hpm, Int1Routing, Int2Routing, InterruptConfig, InterruptPolarity,
+    LatchMode, Lis2de12, Lis2de12Config, MotionAxesConfig, MotionConfig, MotionDetectionMode, Odr, SlaveAddr, St,
 };
 
 // ============================================================================
@@ -25,6 +25,9 @@ const REG_CTRL_REG3: u8 = 0x22;
 const REG_CTRL_REG4: u8 = 0x23;
 const REG_CTRL_REG5: u8 = 0x24;
 const REG_CTRL_REG6: u8 = 0x25;
+const REG_REFERENCE: u8 = 0x26;
+const REG_STATUS: u8 = 0x27;
+const REG_STATUS_AUX: u8 = 0x07;
 const REG_FIFO_READ: u8 = 0x28;
 const REG_FIFO_CTRL: u8 = 0x2E;
 const REG_FIFO_SRC: u8 = 0x2F;
@@ -76,6 +79,9 @@ impl MockState {
         registers.insert(REG_CTRL_REG4, 0x00);
         registers.insert(REG_CTRL_REG5, 0x00);
         registers.insert(REG_CTRL_REG6, 0x00);
+        registers.insert(REG_REFERENCE, 0x00);
+        registers.insert(REG_STATUS, 0x00);
+        registers.insert(REG_STATUS_AUX, 0x00);
         registers.insert(REG_FIFO_CTRL, 0x00);
         registers.insert(REG_FIFO_SRC, 0x20); // EMPTY
         registers.insert(REG_INT1_CFG, 0x00);
@@ -640,6 +646,65 @@ fn motion1_config_writes_expected_registers() {
 }
 
 #[test]
+fn free_fall_preset_writes_st_int_cfg_pattern() {
+    let (mut driver, state) = create_i2c_driver();
+    driver.set_motion1_config(MotionConfig::free_fall_default()).unwrap();
+
+    let regs = state.borrow();
+    // AOI=1 | XLIE/YLIE/ZLIE = 0x80 | 0x15 = 0x95 (ST free-fall example)
+    assert_eq!(regs.registers.get(&REG_INT1_CFG).copied(), Some(0x95));
+    assert_eq!(
+        regs.registers.get(&REG_INT1_THS).copied(),
+        Some(lis2de12::FREE_FALL_THRESHOLD_350MG_2G)
+    );
+    assert_eq!(
+        regs.registers.get(&REG_INT1_DUR).copied(),
+        Some(lis2de12::FREE_FALL_DURATION_DEFAULT)
+    );
+}
+
+#[test]
+fn wake_up_preset_enables_hp_and_high_events() {
+    let (mut driver, state) = create_i2c_driver();
+    driver.set_motion1_config(MotionConfig::wake_up_default()).unwrap();
+
+    let regs = state.borrow();
+    // XHIE/YHIE/ZHIE = 0x2A
+    assert_eq!(regs.registers.get(&REG_INT1_CFG).copied(), Some(0x2A));
+    assert_eq!(regs.registers.get(&REG_CTRL_REG2).copied().unwrap() & 0x01, 0x01);
+}
+
+#[test]
+fn orientation_6d_preset_sets_sixd_and_all_axes() {
+    let (mut driver, state) = create_i2c_driver();
+    driver
+        .set_motion1_config(MotionConfig::orientation_6d_default())
+        .unwrap();
+
+    let regs = state.borrow();
+    // AOI=1, 6D=1, all axis enables → 0xFF
+    assert_eq!(regs.registers.get(&REG_INT1_CFG).copied(), Some(0xFF));
+    assert_eq!(
+        regs.registers.get(&REG_INT1_THS).copied(),
+        Some(lis2de12::ORIENTATION_THRESHOLD_512MG_2G)
+    );
+}
+
+#[test]
+fn orientation_4d_preset_sets_d4d_and_xy_only() {
+    let (mut driver, state) = create_i2c_driver();
+    driver
+        .set_motion1_config(MotionConfig::orientation_4d_default())
+        .unwrap();
+
+    let regs = state.borrow();
+    // AOI=1, 6D=1, XH/XL/YH/YL → 0xCF
+    assert_eq!(regs.registers.get(&REG_INT1_CFG).copied(), Some(0xCF));
+    // D4D_INT1 bit4
+    assert_eq!(regs.registers.get(&REG_CTRL_REG5).copied().unwrap() & 0x10, 0x10);
+}
+
+#[test]
 fn motion1_status_parses_injected_source() {
     let (mut driver, state) = create_i2c_driver();
     // IA + XH = bits 6 and 1 → 0x42
@@ -698,6 +763,19 @@ fn activity_and_interrupt_routing() {
     assert_eq!(state.borrow().registers.get(&REG_ACT_THS).copied(), Some(25));
     assert_eq!(state.borrow().registers.get(&REG_ACT_DUR).copied(), Some(10));
 
+    // Disabling must clear ACT_THS/ACT_DUR even if threshold fields remain set in the struct.
+    driver
+        .set_activity_config(
+            ActivityConfig {
+                enable: false,
+                threshold: 25,
+                duration: 10,
+            },
+        )
+        .unwrap();
+    assert_eq!(state.borrow().registers.get(&REG_ACT_THS).copied(), Some(0));
+    assert_eq!(state.borrow().registers.get(&REG_ACT_DUR).copied(), Some(0));
+
     let irq = InterruptConfig::disabled()
         .with_polarity(InterruptPolarity::ActiveLow)
         .with_int1(Int1Routing {
@@ -716,6 +794,96 @@ fn activity_and_interrupt_routing() {
     assert_eq!(regs.registers.get(&REG_CTRL_REG3).copied(), Some(0x50));
     // I2_ACT bit3 | INT_POLARITY bit1 → 0x0A
     assert_eq!(regs.registers.get(&REG_CTRL_REG6).copied(), Some(0x0A));
+}
+
+#[test]
+fn self_test_mode_round_trips() {
+    let (mut driver, state) = create_i2c_driver();
+    driver.set_self_test(St::SelfTest0).unwrap();
+    // ST bits are [3:2] in CTRL_REG4 → 0b01 << 2 = 0x04
+    assert_eq!(state.borrow().registers.get(&REG_CTRL_REG4).copied().unwrap() & 0x0C, 0x04);
+    assert!(matches!(driver.self_test().unwrap(), St::SelfTest0));
+
+    driver.set_self_test(St::Normal).unwrap();
+    assert_eq!(state.borrow().registers.get(&REG_CTRL_REG4).copied().unwrap() & 0x0C, 0x00);
+}
+
+#[test]
+fn high_pass_config_and_reference() {
+    let (mut driver, state) = create_i2c_driver();
+
+    // Seed HP_IA1 so set_high_pass_config must preserve it.
+    state.borrow_mut().registers.insert(REG_CTRL_REG2, 0x01);
+
+    let config = HighPassConfig::new()
+        .with_mode(Hpm::ReferenceSignal)
+        .with_cutoff(Hpcf::OnePercent)
+        .with_filtered_data_selection(true);
+    driver.set_high_pass_config(config).unwrap();
+
+    {
+        let ctrl2 = state.borrow().registers.get(&REG_CTRL_REG2).copied().unwrap();
+        // HPM=01 (bits 7:6), HPCF=01 (bits 5:4), FDS=1 (bit 3), HP_IA1 preserved (bit 0)
+        assert_eq!(ctrl2, 0b0101_1001);
+    }
+
+    let read_back = driver.high_pass_config().unwrap();
+    assert!(matches!(read_back.mode, Hpm::ReferenceSignal));
+    assert!(matches!(read_back.cutoff, Hpcf::OnePercent));
+    assert!(read_back.filtered_data_selection);
+
+    driver.set_reference(0x2A).unwrap();
+    assert_eq!(state.borrow().registers.get(&REG_REFERENCE).copied(), Some(0x2A));
+    assert_eq!(driver.reference().unwrap(), 0x2A);
+
+    driver.reset_high_pass_filter().unwrap();
+}
+
+#[test]
+fn data_and_temperature_status() {
+    let (mut driver, state) = create_i2c_driver();
+
+    // ZYXDA + XDA + YDA + ZDA = bits 3..0 → 0x0F
+    state.borrow_mut().registers.insert(REG_STATUS, 0x0F);
+    assert!(driver.data_ready().unwrap());
+    let status = driver.data_status().unwrap();
+    assert!(status.xyz_data_available);
+    assert!(status.x_data_available);
+    assert!(!status.any_overrun());
+
+    // TDA bit2
+    state.borrow_mut().registers.insert(REG_STATUS_AUX, 0x04);
+    let temp = driver.temperature_status().unwrap();
+    assert!(temp.data_available);
+    assert!(!temp.overrun);
+}
+
+#[test]
+fn fifo_trigger_and_reset() {
+    let i2c = DummyI2c::new();
+    let state = i2c.state();
+
+    let config = Lis2de12Config {
+        fifo: FifoConfig::enabled(FifoMode::StreamToFifo)
+            .with_watermark(8)
+            .with_trigger(FifoTriggerPin::Int2),
+        ..Default::default()
+    };
+    let mut driver = Lis2de12::new_i2c_with_config(i2c, SlaveAddr::Default, config).unwrap();
+
+    {
+        let fifo_ctrl = state.borrow().registers.get(&REG_FIFO_CTRL).copied().unwrap();
+        // FM=StreamToFifo (0b11 << 6), TR=1 (bit5), FTH=8
+        assert_eq!(fifo_ctrl, 0b1110_1000);
+    }
+
+    // Simulate a different FM value, then reset should restore StreamToFifo + TR + FTH.
+    state.borrow_mut().registers.insert(REG_FIFO_CTRL, 0x40);
+    driver.reset_fifo().unwrap();
+    assert_eq!(
+        state.borrow().registers.get(&REG_FIFO_CTRL).copied(),
+        Some(0b1110_1000)
+    );
 }
 
 #[test]

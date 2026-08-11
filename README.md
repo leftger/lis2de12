@@ -25,12 +25,12 @@ Add the crate to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-lis2de12 = "0.1.2"
+lis2de12 = "0.4"
 embedded-hal = "1.0"
 
 # Optional features:
-# lis2de12 = { version = "0.1.2", features = ["async"] }
-# lis2de12 = { version = "0.1.2", features = ["defmt-03"] }
+# lis2de12 = { version = "0.4", features = ["async"] }
+# lis2de12 = { version = "0.4", features = ["defmt-03"] }
 ```
 
 ---
