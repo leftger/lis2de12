@@ -765,13 +765,11 @@ fn activity_and_interrupt_routing() {
 
     // Disabling must clear ACT_THS/ACT_DUR even if threshold fields remain set in the struct.
     driver
-        .set_activity_config(
-            ActivityConfig {
-                enable: false,
-                threshold: 25,
-                duration: 10,
-            },
-        )
+        .set_activity_config(ActivityConfig {
+            enable: false,
+            threshold: 25,
+            duration: 10,
+        })
         .unwrap();
     assert_eq!(state.borrow().registers.get(&REG_ACT_THS).copied(), Some(0));
     assert_eq!(state.borrow().registers.get(&REG_ACT_DUR).copied(), Some(0));
@@ -801,11 +799,17 @@ fn self_test_mode_round_trips() {
     let (mut driver, state) = create_i2c_driver();
     driver.set_self_test(St::SelfTest0).unwrap();
     // ST bits are [3:2] in CTRL_REG4 → 0b01 << 2 = 0x04
-    assert_eq!(state.borrow().registers.get(&REG_CTRL_REG4).copied().unwrap() & 0x0C, 0x04);
+    assert_eq!(
+        state.borrow().registers.get(&REG_CTRL_REG4).copied().unwrap() & 0x0C,
+        0x04
+    );
     assert!(matches!(driver.self_test().unwrap(), St::SelfTest0));
 
     driver.set_self_test(St::Normal).unwrap();
-    assert_eq!(state.borrow().registers.get(&REG_CTRL_REG4).copied().unwrap() & 0x0C, 0x00);
+    assert_eq!(
+        state.borrow().registers.get(&REG_CTRL_REG4).copied().unwrap() & 0x0C,
+        0x00
+    );
 }
 
 #[test]
@@ -880,10 +884,7 @@ fn fifo_trigger_and_reset() {
     // Simulate a different FM value, then reset should restore StreamToFifo + TR + FTH.
     state.borrow_mut().registers.insert(REG_FIFO_CTRL, 0x40);
     driver.reset_fifo().unwrap();
-    assert_eq!(
-        state.borrow().registers.get(&REG_FIFO_CTRL).copied(),
-        Some(0b1110_1000)
-    );
+    assert_eq!(state.borrow().registers.get(&REG_FIFO_CTRL).copied(), Some(0b1110_1000));
 }
 
 #[test]

@@ -1089,11 +1089,7 @@ impl MotionStatus {
             count += 1;
         }
 
-        if count == 1 {
-            found
-        } else {
-            DeviceOrientation::Unknown
-        }
+        if count == 1 { found } else { DeviceOrientation::Unknown }
     }
 }
 
@@ -2267,9 +2263,7 @@ where
     }
 
     /// Read temperature data-ready and overrun flags from `STATUS_REG_AUX`.
-    pub fn temperature_status(
-        &mut self,
-    ) -> Result<TemperatureStatus, Error<<IFACE as RegisterInterface>::Error>> {
+    pub fn temperature_status(&mut self) -> Result<TemperatureStatus, Error<<IFACE as RegisterInterface>::Error>> {
         let raw = self.device.status_reg_aux().read().map_err(Error::from)?;
         Ok(TemperatureStatus::from(raw))
     }
@@ -3017,10 +3011,7 @@ where
     // ========================================================================
 
     /// Enable or disable the electrostatic self-test asynchronously.
-    pub async fn set_self_test(
-        &mut self,
-        mode: St,
-    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_self_test(&mut self, mode: St) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.device
             .ctrl_reg_4()
             .modify_async(|reg: &mut field_sets::CtrlReg4| reg.set_st(mode))
@@ -3066,10 +3057,7 @@ where
     }
 
     /// Write the high-pass filter reference value asynchronously.
-    pub async fn set_reference(
-        &mut self,
-        value: u8,
-    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn set_reference(&mut self, value: u8) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         self.device
             .reference()
             .write_async(|reg: &mut field_sets::Reference| reg.set_reference(value))
@@ -3089,9 +3077,7 @@ where
     }
 
     /// Reset the high-pass filter by reading the `REFERENCE` register asynchronously.
-    pub async fn reset_high_pass_filter(
-        &mut self,
-    ) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
+    pub async fn reset_high_pass_filter(&mut self) -> Result<(), Error<<IFACE as AsyncRegisterInterface>::Error>> {
         let _ = self.device.reference().read_async().await.map_err(Error::from)?;
         Ok(())
     }
