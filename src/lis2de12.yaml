@@ -333,16 +333,20 @@ CTRL_REG4:
         PlusMinus16g: { value: 0b11, description: "±16g" }
     ST:
       base: uint
-      start: 2
-      end: 4
+      start: 1
+      end: 3
       access: RW
-      description: Self-test enable
+      description: |
+        Self-test enable (datasheet Table 39: ST1 is bit 2, ST0 is bit 1).
+        Bit 3 sits between this field and FS and must stay 0 for correct
+        device operation (datasheet Table 37, footnote 1) — it is
+        intentionally left unmodeled so it always reads/writes as 0.
       conversion:
         name: ST
-        Normal: { value: 0b00, description: "Normal mode" }
+        Normal: { value: 0b00, description: "Normal mode (self-test disabled)" }
         SelfTest0: { value: 0b01, description: "Self-test 0" }
         SelfTest1: { value: 0b10, description: "Self-test 1" }
-        SelfTestMix: { value: 0b11, description: "Self-test mix" }
+        SelfTestMix: { value: 0b11, description: "Reserved / undefined (datasheet Table 39: \"-\")" }
     SIM:
       base: bool
       start: 0

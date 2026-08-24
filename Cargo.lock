@@ -425,7 +425,7 @@ dependencies = [
 
 [[package]]
 name = "lis2de12"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "accelerometer",
  "defmt 1.0.1",

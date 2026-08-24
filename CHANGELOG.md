@@ -8,6 +8,19 @@ with the pre-1.0 convention that breaking changes increment the minor version.
 
 ---
 
+## [0.4.1] — 2026-08-24
+
+### Fixed
+
+- `CTRL_REG4`'s `ST` (self-test) field was mapped to bits `[3:2]` instead of
+  the datasheet's `[2:1]` (Table 37/39). `set_self_test` / `set_st` therefore
+  wrote to the reserved bit 3 (which must stay `0` per Table 37, footnote 1)
+  and never touched the real `ST0` bit, so self-test mode selection did not
+  match real silicon. `ST` is now correctly mapped to bits `[2:1]`; bit 3 is
+  left unmodeled so it always reads/writes as `0`.
+
+---
+
 ## [0.4.0] — 2026-08-11
 
 ### Added

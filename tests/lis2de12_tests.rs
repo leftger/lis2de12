@@ -798,16 +798,16 @@ fn activity_and_interrupt_routing() {
 fn self_test_mode_round_trips() {
     let (mut driver, state) = create_i2c_driver();
     driver.set_self_test(St::SelfTest0).unwrap();
-    // ST bits are [3:2] in CTRL_REG4 → 0b01 << 2 = 0x04
+    // ST1:ST0 are bits [2:1] in CTRL_REG4 (datasheet Table 37/39) → 0b01 << 1 = 0x02
     assert_eq!(
-        state.borrow().registers.get(&REG_CTRL_REG4).copied().unwrap() & 0x0C,
-        0x04
+        state.borrow().registers.get(&REG_CTRL_REG4).copied().unwrap() & 0x06,
+        0x02
     );
     assert!(matches!(driver.self_test().unwrap(), St::SelfTest0));
 
     driver.set_self_test(St::Normal).unwrap();
     assert_eq!(
-        state.borrow().registers.get(&REG_CTRL_REG4).copied().unwrap() & 0x0C,
+        state.borrow().registers.get(&REG_CTRL_REG4).copied().unwrap() & 0x06,
         0x00
     );
 }
