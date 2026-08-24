@@ -1683,6 +1683,10 @@ pub struct SpiInterfaceAsync<SPI> {
     pub spi: SPI,
 }
 
+/// I²C sub-address MSb. When set, the LIS2DE12 auto-increments the register
+/// pointer so a burst read/write walks consecutive addresses (datasheet §5.1.1).
+const I2C_AUTO_INCREMENT: u8 = 0x80;
+
 impl<I2C> BufferInterfaceError for DeviceInterface<I2C>
 where
     I2C: hal::i2c::I2c,
@@ -1765,13 +1769,14 @@ where
         address: Self::AddressType,
         buf: &mut [u8],
     ) -> Result<usize, <Self as RegisterInterface>::Error> {
-        self.i2c.write_read(self.address, &[address], buf)?;
+        self.i2c
+            .write_read(self.address, &[address | I2C_AUTO_INCREMENT], buf)?;
         Ok(buf.len())
     }
 
     fn write(&mut self, address: Self::AddressType, buf: &[u8]) -> Result<usize, <Self as RegisterInterface>::Error> {
         let mut data = [0u8; 1 + 32];
-        data[0] = address;
+        data[0] = address | I2C_AUTO_INCREMENT;
         let end = 1 + buf.len();
         data[1..end].copy_from_slice(buf);
         self.i2c.write(self.address, &data[..end])?;
@@ -1791,13 +1796,15 @@ where
     type AddressType = u8;
 
     async fn read(&mut self, address: Self::AddressType, buf: &mut [u8]) -> Result<usize, Self::Error> {
-        self.i2c.write_read(self.address, &[address], buf).await?;
+        self.i2c
+            .write_read(self.address, &[address | I2C_AUTO_INCREMENT], buf)
+            .await?;
         Ok(buf.len())
     }
 
     async fn write(&mut self, address: Self::AddressType, buf: &[u8]) -> Result<usize, Self::Error> {
         let mut data = [0u8; 1 + 32];
-        data[0] = address;
+        data[0] = address | I2C_AUTO_INCREMENT;
         let end = 1 + buf.len();
         data[1..end].copy_from_slice(buf);
         self.i2c.write(self.address, &data[..end]).await?;
@@ -3698,8 +3705,6 @@ fn scale_to_g(raw: I16x3, g_per_lsb: f32) -> F32x3 {
 
 #[cfg(test)]
 mod tests {
-    use core::f32::EPSILON;
-
     use super::*;
 
     #[test]
@@ -3794,9 +3799,9 @@ mod tests {
         let raw = I16x3::new(2, -4, 0);
         let scaled = scale_to_g(raw, 0.5);
 
-        assert!((scaled.x - 1.0).abs() <= EPSILON);
-        assert!((scaled.y + 2.0).abs() <= EPSILON);
-        assert!(scaled.z.abs() <= EPSILON);
+        assert!((scaled.x - 1.0).abs() <= f32::EPSILON);
+        assert!((scaled.y + 2.0).abs() <= f32::EPSILON);
+        assert!(scaled.z.abs() <= f32::EPSILON);
     }
 
     #[test]

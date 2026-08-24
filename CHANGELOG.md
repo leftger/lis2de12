@@ -8,6 +8,17 @@ with the pre-1.0 convention that breaking changes increment the minor version.
 
 ---
 
+## [0.4.2] — 2026-08-24
+
+### Fixed
+
+- I²C multi-byte buffer transfers now set the sub-address auto-increment bit
+  (`SUB[7]`). `read_g` / `read_raw` previously burst-read `OUT_X_L` (0x28)
+  without it, so the part returned dummy zeros and live traces were a flat
+  line. SPI was already correct.
+
+---
+
 ## [0.4.1] — 2026-08-24
 
 ### Fixed

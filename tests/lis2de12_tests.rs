@@ -65,6 +65,8 @@ struct MockState {
     fifo_data: VecDeque<u8>,
     fifo_frames: u8,
     watermark: u8,
+    /// Last I²C sub-address byte (including the auto-increment MSb when set).
+    last_i2c_sub: Option<u8>,
 }
 
 impl MockState {
@@ -101,6 +103,7 @@ impl MockState {
             fifo_data: VecDeque::new(),
             fifo_frames: 0,
             watermark: 0,
+            last_i2c_sub: None,
         }
     }
 
@@ -124,6 +127,7 @@ impl MockState {
     }
 
     fn write_bytes(&mut self, start: u8, data: &[u8]) {
+        let start = start & 0x7F;
         for (i, &value) in data.iter().enumerate() {
             let addr = start.wrapping_add(i as u8);
             self.registers.insert(addr, value);
@@ -227,8 +231,21 @@ impl embedded_hal::i2c::I2c for DummyI2c {
                     }
                 }
                 embedded_hal::i2c::Operation::Read(read) => {
-                    let addr = pending_addr.take().unwrap_or(0);
-                    self.state.borrow_mut().read_bytes(addr, read);
+                    let sub = pending_addr.take().unwrap_or(0);
+                    let mut state = self.state.borrow_mut();
+                    state.last_i2c_sub = Some(sub);
+                    let start = sub & 0x7F;
+                    let auto_inc = sub & 0x80 != 0;
+                    if !auto_inc && read.len() > 1 {
+                        if start == REG_FIFO_READ {
+                            read.fill(0);
+                        } else {
+                            let value = state.registers.get(&start).copied().unwrap_or(0);
+                            read.fill(value);
+                        }
+                    } else {
+                        state.read_bytes(start, read);
+                    }
                 }
             }
         }
@@ -252,7 +269,22 @@ impl embedded_hal::i2c::I2c for DummyI2c {
         if write.is_empty() {
             return Ok(());
         }
-        self.state.borrow_mut().read_bytes(write[0], read);
+        let mut state = self.state.borrow_mut();
+        let sub = write[0];
+        state.last_i2c_sub = Some(sub);
+        let start = sub & 0x7F;
+        let auto_inc = sub & 0x80 != 0;
+        // Without SUB[7], the part does not walk registers; 0x28 is dummy OUT_X_L.
+        if !auto_inc && read.len() > 1 {
+            if start == REG_FIFO_READ {
+                read.fill(0);
+            } else {
+                let value = state.registers.get(&start).copied().unwrap_or(0);
+                read.fill(value);
+            }
+            return Ok(());
+        }
+        state.read_bytes(start, read);
         Ok(())
     }
 }
@@ -484,6 +516,19 @@ fn read_raw_decodes_fifo_frame() {
     assert_eq!(raw.x, 10);
     assert_eq!(raw.y, -20);
     assert_eq!(raw.z, 30);
+}
+
+#[test]
+fn i2c_fifo_read_sets_auto_increment_bit() {
+    let (mut driver, state) = create_i2c_driver();
+    state.borrow_mut().inject_fifo_sample(1, 2, 3);
+
+    let _ = driver.read_raw().unwrap();
+    assert_eq!(
+        state.borrow().last_i2c_sub,
+        Some(REG_FIFO_READ | 0x80),
+        "I²C FIFO burst reads must set SUB[7] or the part returns OUT_X_L zeros"
+    );
 }
 
 #[test]
